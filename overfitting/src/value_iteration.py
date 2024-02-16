@@ -67,7 +67,7 @@ def value_iteration_q(t_r_dict, states, actions, gamma=0.9, theta=1e-6):
 
     return policy, Q
 
-
+########################################################
 ### Stochastic case
 
 
@@ -112,3 +112,30 @@ def value_iteration_v_stochastic(t_r_dict, states, actions, gamma=0.9, theta=1e-
         policy[state] = best_action
 
     return policy, V
+
+def value_iteration_q_stochastic(t_r_dict, states, actions, gamma=0.9, theta=1e-6):
+    Q = {state: {action: 0 for action in actions} for state in states}
+
+    while True:
+        delta = 0
+        for state in states:
+            for action in actions:
+                old_q = Q[state][action]
+
+                # Sum over all possible next states given current state and action
+                next_outcomes = t_r_dict.get((state, action), [])
+                q_value = sum(
+                    prob * (reward + gamma * max(Q[next_state].values()))
+                    for next_state, reward, done, prob in next_outcomes if not done
+                )
+
+                Q[state][action] = q_value
+                delta = max(delta, abs(old_q - q_value))
+
+        if delta < theta:
+            break
+
+    # Derive policy from Q-values
+    policy = {state: max(Q[state], key=Q[state].get) for state in states}
+
+    return policy, Q
