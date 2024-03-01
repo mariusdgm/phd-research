@@ -18,3 +18,5 @@ def extract_V_from_Q_for_stochastic_policy(Q, policy, states):
     for state in states:
         V[state] = sum(policy[state][a] * Q[state][a] for a in policy[state])
     return V
+
+
