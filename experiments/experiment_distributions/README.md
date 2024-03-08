@@ -1,6 +1,6 @@
 ```
-liftoff-prepare configs --runs-no 3 --do
+liftoff-prepare configs --runs-no 10 --do
 ```
 ```
-liftoff experiment.py ./results/path --procs-no 8
+liftoff experiment.py ./results --procs-no 8
 ```

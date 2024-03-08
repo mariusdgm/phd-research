@@ -15,3 +15,5 @@ alpha: 0.1  # Learning rate
 gamma: 0.9  # Discount factor
 epsilon: 0.01  # Convergence criterion
 batch_size: 32
+
+lower_bound_softmax: 0.5

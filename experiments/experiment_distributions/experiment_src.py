@@ -158,8 +158,8 @@ def train_dqn(
     actions,
     gamma,
     epsilon,
-    batch_size=64,
-    max_iterations=1000,
+    batch_size,
+    max_iterations,
     logger=None,
 ):
     if logger is None:
@@ -209,12 +209,12 @@ def train_dqn(
 
         loss_record.append((epoch, total_loss, expected_value))
 
-        if expected_value < epsilon:
-            print(
-                f"Converged after {epoch + 1} epochs with expected value {expected_value}"
-            )
-            logger.info(f"Converged after {epoch + 1} epochs with expected value {expected_value}")
-            break
+        # if expected_value < epsilon:
+        #     print(
+        #         f"Converged after {epoch + 1} epochs with expected value {expected_value}"
+        #     )
+        #     logger.info(f"Converged after {epoch + 1} epochs with expected value {expected_value}")
+        #     break
         
     logger.info(f"Exiting after {epoch + 1} epochs with expected value {expected_value}")
 
@@ -340,16 +340,16 @@ def run_sampling_regret_experiment(
 
     return loss_record, bm_error
 
-
-def generate_random_policy_transitions(transitions_train, num_steps, env):
+def generate_random_policy_transitions(transitions_train, num_steps, env, actions, seed, logger):
     np.random.seed(seed)
     transitions = []
-
+    
     # Convert transitions_train to a set for efficient lookup
     transitions_train_set = {(s, a, ns, r, d): None for s, a, ns, r, d, _ in transitions_train}
 
     while len(transitions) < num_steps:
         state = env.reset()
+        logger.info(f"State: {state}, reset environment")
         done = False
         while not done:
             action = np.random.choice(actions)
@@ -365,6 +365,44 @@ def generate_random_policy_transitions(transitions_train, num_steps, env):
                 break
 
     return transitions
+
+def train_dqn_with_policy_evaluation(
+    dqn, transitions, states, actions, gamma, epsilon, batch_size, max_iterations, logger=None
+):
+    if logger is None:
+        logger = logging.getLogger(__name__)
+        
+    dataset = TransitionDataset(transitions)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    optimizer = optim.Adam(dqn.parameters(), lr=0.001)
+    loss_fn = nn.MSELoss()
+    loss_record = []
+
+    for epoch in range(max_iterations):
+        total_loss = 0
+        for state, action, next_state, reward, done in dataloader:
+            optimizer.zero_grad()
+            q_values = dqn(state)
+            
+            next_q_values = dqn(next_state)
+            # Compute expected Q-value for the next state using uniform random policy
+            expected_next_q_values = next_q_values.mean(dim=1)
+            
+            target_q_values = q_values.clone()
+            for i in range(len(done)):
+                update = reward[i] if done[i] else reward[i] + gamma * expected_next_q_values[i]
+                target_q_values[i, action[i]] = update
+
+            loss = loss_fn(q_values, target_q_values)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            
+        loss_record.append((epoch, total_loss, 0))
+        
+        logger.info(f'Epoch {epoch + 1}, Total Loss: {total_loss}')
+
+    return loss_record
 
 def run_sampling_regret_experiment_with_policy_evaluation(
     tau,
@@ -391,12 +429,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
-    random_policy = create_random_policy(states, actions)
 
-    Q = {state: {action: 0 for action in actions} for state in states}
-    Q_pi_random = random_policy_evaluation_q_stochastic(
-        states, actions, random_policy, Q, env.mdp, gamma, epsilon
-    )
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
     transitions_train, transitions_val = train_test_split(
@@ -409,35 +442,16 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         lower_bound=lower_bound_softmax / len(transitions_train),
     )
     
-    random_policy_transitions = generate_random_policy_transitions(transitions_train, num_steps, env)
-    
     ### Training
     input_size = len(states[0])  # Or another way to represent the size of your input
     output_size = len(actions)
 
     # Initialize the DQN
-    dqn = DQN(input_size, output_size)
-
-    loss_record = train_dqn(
-        dqn,
-        sampled_transitions_train,
-        Q_pi_random,
-        states,
-        actions,
-        gamma,
-        epsilon,
-        batch_size=batch_size,
-        max_iterations=train_max_iterations,
-        logger=logger,
-    )
-    
     dqn_random_policy = DQN(input_size, output_size)
 
-    # Train the second DQN model using the dataset generated from the random policy
-    loss_record_random_policy = train_dqn(
+    loss_record_random_policy = train_dqn_with_policy_evaluation(
         dqn_random_policy,
-        random_policy_transitions,
-        Q_pi_random,
+        sampled_transitions_train,
         states,
         actions,
         gamma,
@@ -446,13 +460,72 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         train_max_iterations,
         logger,
     )
+    
+    dqn_random_policy = DQN(input_size, output_size)
 
     bm_error = compute_bellmans_error(
-        dqn, validation_transitions=transitions_val, gamma=gamma
+        dqn_random_policy, validation_transitions=transitions_val, gamma=gamma
     )
     
-    mean_bellmans_error_random_policy = compute_bellmans_error(
-        dqn_random_policy, transitions_val, gamma
+
+    return loss_record_random_policy, bm_error
+
+def run_baseline_random_policy_experiment(
+    tau,
+    seed,
+    rows,
+    cols,
+    start_state,
+    p_success,
+    terminal_states,
+    num_steps,
+    epsilon,
+    gamma,
+    lower_bound_softmax,
+    batch_size,
+    train_max_iterations,
+    logger=None,
+):
+    np.random.seed(seed)
+    
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    env = make_env(rows, cols, start_state, p_success, terminal_states, seed)
+ 
+    states = list(set([s for s, _ in env.mdp.keys()]))
+    actions = list(set([a for _, a in env.mdp.keys()]))
+
+    transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
+    transitions_train, transitions_val = train_test_split(
+        transitions_list, test_size=0.2, random_state=seed
     )
 
-    return loss_record, bm_error
+    random_policy_transitions = generate_random_policy_transitions(transitions_train, num_steps, env, actions, seed, logger)
+    
+    ### Training
+    input_size = len(states[0])  # Or another way to represent the size of your input
+    output_size = len(actions)
+
+    # Initialize the DQN
+    dqn_random_policy = DQN(input_size, output_size)
+
+    loss_record_random_policy = train_dqn_with_policy_evaluation(
+        dqn_random_policy,
+        random_policy_transitions,
+        states,
+        actions,
+        gamma,
+        epsilon,
+        batch_size,
+        train_max_iterations,
+        logger,
+    )
+    
+    dqn_random_policy = DQN(input_size, output_size)
+
+    bm_error = compute_bellmans_error(
+        dqn_random_policy, validation_transitions=transitions_val, gamma=gamma
+    )
+    
+    return loss_record_random_policy, bm_error

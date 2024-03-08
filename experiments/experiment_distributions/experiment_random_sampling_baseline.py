@@ -10,7 +10,7 @@ from argparse import Namespace
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(root_dir)
 
-from experiment_src import run_sampling_regret_experiment
+from experiment_src import run_baseline_random_policy_experiment
 from experiments.experiment_utils import setup_logger, seed_everything, convert_from_string
 
 
@@ -33,9 +33,9 @@ def run(opts: Namespace) -> None:
         f"Starting experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
 
-    loss_record, bm_error = run_sampling_regret_experiment(
+    loss_record, bm_error = run_baseline_random_policy_experiment(
         tau=opts.tau,
-        seed=opts.run_id,
+        seed=opts.seed,
         rows=opts.rows,
         cols=opts.cols,
         start_state=opts.start_state,
@@ -44,8 +44,8 @@ def run(opts: Namespace) -> None:
         num_steps=opts.num_steps,
         epsilon=opts.epsilon,
         gamma=opts.gamma,
-        batch_size=opts.batch_size,
         lower_bound_softmax=opts.lower_bound_softmax,
+        batch_size=opts.batch_size,
         train_max_iterations=opts.train_max_iterations,
         logger=logger,
     )

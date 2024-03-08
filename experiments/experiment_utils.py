@@ -7,6 +7,7 @@ sys.path.append(root_dir)
 import subprocess
 import threading
 import shutil
+import ast
 
 from typing import List
 
@@ -103,3 +104,13 @@ def seed_everything(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
+    
+def convert_from_string(value):
+    """
+    Convert a string representation of a Python literal into its actual type.
+    Specifically useful for converting string tuples and dictionaries with tuple keys.
+    """
+    try:
+        return ast.literal_eval(value)
+    except (ValueError, SyntaxError):
+        return value
