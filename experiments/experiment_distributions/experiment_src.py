@@ -151,7 +151,7 @@ class TransitionDataset(Dataset):
         )
 
 
-def train_dqn(
+def train_net_with_td(
     dqn,
     transitions,
     Q_pi_random,
@@ -325,7 +325,7 @@ def run_sampling_regret_experiment(
     # Initialize the DQN
     dqn = DQN(input_size, output_size)
 
-    loss_record = train_dqn(
+    loss_record = train_net_with_td(
         dqn,
         sampled_transitions_train,
         Q_pi_random,
@@ -376,7 +376,7 @@ def generate_random_policy_transitions(
     return transitions
 
 
-def train_dqn_with_policy_evaluation(
+def train_net_with_sarsa(
     dqn,
     transitions,
     states,
@@ -471,7 +471,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     # Initialize the DQN
     dqn_random_policy = DQN(input_size, output_size)
 
-    loss_record_random_policy = train_dqn_with_policy_evaluation(
+    loss_record_random_policy = train_net_with_sarsa(
         dqn_random_policy,
         sampled_transitions_train,
         states,
@@ -532,7 +532,7 @@ def run_baseline_random_policy_experiment(
     # Initialize the DQN
     dqn_random_policy = DQN(input_size, output_size)
 
-    loss_record_random_policy = train_dqn_with_policy_evaluation(
+    loss_record_random_policy = train_net_with_sarsa(
         dqn_random_policy,
         random_policy_transitions,
         states,
