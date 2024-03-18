@@ -151,7 +151,7 @@ class TransitionDataset(Dataset):
         )
 
 
-def train_net_with_td(
+def train_net_with_neural_fitted_q(
     dqn,
     transitions,
     Q_pi_random,
@@ -166,6 +166,7 @@ def train_net_with_td(
     if logger is None:
         logger = logging.getLogger(__name__)
 
+    dqn.train()
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optimizer = optim.Adam(dqn.parameters(), lr=0.001)
@@ -182,7 +183,7 @@ def train_net_with_td(
             optimizer.zero_grad()
             q_values = dqn(state)
             next_q_values = dqn(next_state)
-            max_next_q_values = next_q_values.max(1)[0].detach()
+            max_next_q_values = next_q_values.detach().max(1)[0]
             target_q_values = q_values.clone()
 
             for i in range(len(done)):
@@ -253,9 +254,9 @@ def compute_bellmans_error(dqn, validation_transitions, gamma=0.99):
     return mean_bellmans_error
 
 
-class DQN(nn.Module):
+class QNET(nn.Module):
     def __init__(self, input_size, output_size):
-        super(DQN, self).__init__()
+        super(QNET, self).__init__()
         self.network = nn.Sequential(
             nn.Linear(input_size, 128),
             nn.ReLU(),
@@ -269,8 +270,6 @@ class DQN(nn.Module):
 
 
 def on_policy_loss(predictions, targets):
-    # Implement the on-policy error calculation here
-    # This is a placeholder for the actual loss calculation
     loss = torch.nn.functional.mse_loss(predictions, targets)
     return loss
 
@@ -323,9 +322,9 @@ def run_sampling_regret_experiment(
     output_size = len(actions)
 
     # Initialize the DQN
-    dqn = DQN(input_size, output_size)
+    dqn = QNET(input_size, output_size)
 
-    loss_record = train_net_with_td(
+    loss_record = train_net_with_neural_fitted_q(
         dqn,
         sampled_transitions_train,
         Q_pi_random,
@@ -346,29 +345,31 @@ def run_sampling_regret_experiment(
 
 
 def generate_random_policy_transitions(
-    transitions_train, num_steps, env, actions, seed, logger
+    transitions_list, num_steps, env, actions, seed, logger
 ):
     np.random.seed(seed)
     transitions = []
 
-    # Convert transitions_train to a set for efficient lookup
-    transitions_train_set = {
-        (s, a, ns, r, d): None for s, a, ns, r, d, _ in transitions_train
-    }
+    # Convert transitions_train to a set with float rewards for efficient lookup
+    transitions_train_set = set(
+        (s, a.value, ns, float(r), d) for s, a, ns, r, d, _ in transitions_list
+    )
+    [t for t in transitions_train_set if t[3]==1]
 
     while len(transitions) < num_steps:
         state = env.reset()
-        logger.info(f"State: {state}, reset environment")
+        # logger.info(f"State: {state}, reset environment")
         done = False
         while not done:
             action = np.random.choice(actions)
             next_state, reward, done, _, _ = env.step(action)
-            transition = (state, action, next_state, reward, done)
+            # Ensure reward is a float
+            transition = (state, action, next_state, float(reward), done)
 
-            # Only add if the transition is in the transitions_train_set
-            if transition[:5] in transitions_train_set:
+            # Check if the transition is in the transitions_train_set
+            if transition in transitions_train_set:
                 transitions.append(transition + (1,))  # adding probability
-
+            
             state = next_state
             if len(transitions) >= num_steps:
                 break
@@ -376,7 +377,7 @@ def generate_random_policy_transitions(
     return transitions
 
 
-def train_net_with_sarsa(
+def train_net_with_value_function_approximation(
     dqn,
     transitions,
     states,
@@ -390,6 +391,7 @@ def train_net_with_sarsa(
     if logger is None:
         logger = logging.getLogger(__name__)
 
+    dqn.train()
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optimizer = optim.Adam(dqn.parameters(), lr=0.001)
@@ -404,7 +406,7 @@ def train_net_with_sarsa(
 
             next_q_values = dqn(next_state)
             # Compute expected Q-value for the next state using uniform random policy
-            expected_next_q_values = next_q_values.mean(dim=1)
+            expected_next_q_values = next_q_values.detach().mean(dim=1)
 
             target_q_values = q_values.clone()
             for i in range(len(done)):
@@ -465,13 +467,13 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     )
 
     ### Training
-    input_size = len(states[0])  # Or another way to represent the size of your input
+    input_size = len(states[0])  
     output_size = len(actions)
 
     # Initialize the DQN
-    dqn_random_policy = DQN(input_size, output_size)
+    dqn_random_policy = QNET(input_size, output_size)
 
-    loss_record_random_policy = train_net_with_sarsa(
+    loss_record_random_policy = train_net_with_value_function_approximation(
         dqn_random_policy,
         sampled_transitions_train,
         states,
@@ -530,10 +532,10 @@ def run_baseline_random_policy_experiment(
     output_size = len(actions)
 
     # Initialize the DQN
-    dqn_random_policy = DQN(input_size, output_size)
+    qnet_random_policy = QNET(input_size, output_size)
 
-    loss_record_random_policy = train_net_with_sarsa(
-        dqn_random_policy,
+    loss_record_random_policy = train_net_with_value_function_approximation(
+        qnet_random_policy,
         random_policy_transitions,
         states,
         actions,
@@ -545,7 +547,7 @@ def run_baseline_random_policy_experiment(
     )
 
     bm_error = compute_bellmans_error(
-        dqn_random_policy, validation_transitions=transitions_val, gamma=gamma
+        qnet_random_policy, validation_transitions=transitions_val, gamma=gamma
     )
 
     return loss_record_random_policy, bm_error
