@@ -23,6 +23,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
+import networkx as nx
+
 import logging
 
 
@@ -290,8 +292,6 @@ def run_sampling_regret_experiment(
     train_max_iterations,
     logger=None,
 ):
-    np.random.seed(seed)
-
     if logger is None:
         logger = logging.getLogger(__name__)
 
@@ -445,8 +445,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     train_max_iterations,
     logger=None,
 ):
-    np.random.seed(seed)
-
+  
     if logger is None:
         logger = logging.getLogger(__name__)
 
@@ -456,9 +455,9 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     actions = list(set([a for _, a in env.mdp.keys()]))
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
-    transitions_train, transitions_val = train_test_split(
-        transitions_list, test_size=0.2, random_state=seed
-    )
+    
+    transitions_train, transitions_val = generate_train_test_split_with_valid_path(transitions_list=transitions_list, start_state=start_state, terminal_states=terminal_states)
+ 
     sampled_transitions_train = generate_transitions_observations(
         transitions_train,
         num_steps,
@@ -519,9 +518,8 @@ def run_baseline_random_policy_experiment(
     actions = list(set([a for _, a in env.mdp.keys()]))
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
-    transitions_train, transitions_val = train_test_split(
-        transitions_list, test_size=0.2, random_state=seed
-    )
+    
+    transitions_train, transitions_val = generate_train_test_split_with_valid_path(transitions_list=transitions_list, start_state=start_state, terminal_states=terminal_states)
 
     random_policy_transitions = generate_random_policy_transitions(
         transitions_train, num_steps, env, actions, seed, logger
@@ -551,3 +549,40 @@ def run_baseline_random_policy_experiment(
     )
 
     return loss_record_random_policy, bm_error
+
+def build_graph_with_networkx(transitions, start_state, terminal_states):
+    G = nx.DiGraph()  # Directed graph
+    # Explicitly add the start state as a node
+    G.add_node(start_state)
+    # Also add each terminal state as a node
+    for terminal_state in terminal_states.keys():
+        G.add_node(terminal_state)
+    for current_state, action, next_state, reward, done, prob in transitions:
+        G.add_edge(current_state, next_state)
+    return G
+
+def check_path_existence_to_any_terminal(G, start_state, terminal_states):
+    for terminal_state in terminal_states.keys():
+        if nx.has_path(G, start_state, terminal_state):
+            return True
+    return False
+
+def generate_train_test_split_with_valid_path(transitions_list, start_state, terminal_states):
+    transitions_train, transitions_val = [], []
+    found_valid_path = False
+    attempts = 0
+    max_attempts = 100
+
+    while not found_valid_path and attempts < max_attempts:
+        transitions_train, transitions_val = train_test_split(
+            transitions_list, test_size=0.2, random_state=np.random.randint(0, 10000)
+        )
+        G = build_graph_with_networkx(transitions_train, start_state, terminal_states)
+        if check_path_existence_to_any_terminal(G, start_state, terminal_states):
+            found_valid_path = True
+        attempts += 1
+
+    if not found_valid_path:
+        raise ValueError("Could not find a valid path to any terminal state. Check setup.") 
+    
+    return transitions_train, transitions_val

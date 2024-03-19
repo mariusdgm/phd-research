@@ -1,7 +1,7 @@
 experiment: "experiment_distributions"
 
 seed: null
-start_state: (0, 0)
+start_state: (1, 1)
 terminal_states:
   "(8, 8)": 1.0
 rows: 10 
