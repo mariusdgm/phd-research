@@ -11,7 +11,12 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__fi
 sys.path.append(root_dir)
 
 from experiment_src import run_sampling_regret_experiment
-from experiments.experiment_utils import setup_logger, seed_everything, convert_from_string
+from experiments.experiment_utils import (
+    setup_logger,
+    seed_everything,
+    convert_from_string,
+    namespace_to_dict
+)
 
 
 def run(opts: Namespace) -> None:
@@ -20,7 +25,7 @@ def run(opts: Namespace) -> None:
     )
     opts.seed = random.randint(0, 2**32 - 1) if opts.seed is None else opts.seed
     opts.start_state = convert_from_string(opts.start_state)
-    opts.terminal_states = convert_from_string(opts.terminal_states)
+    opts.terminal_states = namespace_to_dict(opts.terminal_states)
     opts_dict = vars(opts)
 
     with open(os.path.join(opts.out_dir, "post_cfg.yaml"), "w") as f:

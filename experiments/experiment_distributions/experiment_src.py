@@ -307,8 +307,10 @@ def run_sampling_regret_experiment(
     )
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
-    transitions_train, transitions_val = train_test_split(
-        transitions_list, test_size=0.2, random_state=seed
+    transitions_train, transitions_val = generate_train_test_split_with_valid_path(
+        transitions_list=transitions_list,
+        start_state=start_state,
+        terminal_states=terminal_states,
     )
     sampled_transitions_train = generate_transitions_observations(
         transitions_train,
@@ -354,7 +356,7 @@ def generate_random_policy_transitions(
     transitions_train_set = set(
         (s, a.value, ns, float(r), d) for s, a, ns, r, d, _ in transitions_list
     )
-    [t for t in transitions_train_set if t[3]==1]
+    [t for t in transitions_train_set if t[3] == 1]
 
     while len(transitions) < num_steps:
         state = env.reset()
@@ -369,7 +371,7 @@ def generate_random_policy_transitions(
             # Check if the transition is in the transitions_train_set
             if transition in transitions_train_set:
                 transitions.append(transition + (1,))  # adding probability
-            
+
             state = next_state
             if len(transitions) >= num_steps:
                 break
@@ -445,7 +447,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     train_max_iterations,
     logger=None,
 ):
-  
+
     if logger is None:
         logger = logging.getLogger(__name__)
 
@@ -455,9 +457,13 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     actions = list(set([a for _, a in env.mdp.keys()]))
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
-    
-    transitions_train, transitions_val = generate_train_test_split_with_valid_path(transitions_list=transitions_list, start_state=start_state, terminal_states=terminal_states)
- 
+
+    transitions_train, transitions_val = generate_train_test_split_with_valid_path(
+        transitions_list=transitions_list,
+        start_state=start_state,
+        terminal_states=terminal_states,
+    )
+
     sampled_transitions_train = generate_transitions_observations(
         transitions_train,
         num_steps,
@@ -466,7 +472,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     )
 
     ### Training
-    input_size = len(states[0])  
+    input_size = len(states[0])
     output_size = len(actions)
 
     # Initialize the DQN
@@ -518,8 +524,12 @@ def run_baseline_random_policy_experiment(
     actions = list(set([a for _, a in env.mdp.keys()]))
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
-    
-    transitions_train, transitions_val = generate_train_test_split_with_valid_path(transitions_list=transitions_list, start_state=start_state, terminal_states=terminal_states)
+
+    transitions_train, transitions_val = generate_train_test_split_with_valid_path(
+        transitions_list=transitions_list,
+        start_state=start_state,
+        terminal_states=terminal_states,
+    )
 
     random_policy_transitions = generate_random_policy_transitions(
         transitions_train, num_steps, env, actions, seed, logger
@@ -550,6 +560,7 @@ def run_baseline_random_policy_experiment(
 
     return loss_record_random_policy, bm_error
 
+
 def build_graph_with_networkx(transitions, start_state, terminal_states):
     G = nx.DiGraph()  # Directed graph
     # Explicitly add the start state as a node
@@ -561,13 +572,27 @@ def build_graph_with_networkx(transitions, start_state, terminal_states):
         G.add_edge(current_state, next_state)
     return G
 
+
 def check_path_existence_to_any_terminal(G, start_state, terminal_states):
+    # Ensure the start state has at least one outgoing edge
+    if not list(G.out_edges(start_state)):
+        return False
+
+    # Check for direct reachability to any terminal state
+    terminal_reachable = any(list(G.in_edges(terminal_state)) for terminal_state in terminal_states.keys())
+    if not terminal_reachable:
+        return False
+
+    # Perform path existence check as before
     for terminal_state in terminal_states.keys():
         if nx.has_path(G, start_state, terminal_state):
             return True
     return False
 
-def generate_train_test_split_with_valid_path(transitions_list, start_state, terminal_states):
+
+def generate_train_test_split_with_valid_path(
+    transitions_list, start_state, terminal_states
+):
     transitions_train, transitions_val = [], []
     found_valid_path = False
     attempts = 0
@@ -583,6 +608,8 @@ def generate_train_test_split_with_valid_path(transitions_list, start_state, ter
         attempts += 1
 
     if not found_valid_path:
-        raise ValueError("Could not find a valid path to any terminal state. Check setup.") 
-    
+        raise ValueError(
+            "Could not find a valid path to any terminal state. Check setup."
+        )
+
     return transitions_train, transitions_val

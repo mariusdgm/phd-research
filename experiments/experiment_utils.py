@@ -8,6 +8,7 @@ import subprocess
 import threading
 import shutil
 import ast
+import argparse
 
 from typing import List
 
@@ -26,6 +27,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
+
 
 def setup_logger(name, log_file=None, level=logging.INFO):
     """Set up a logger that logs to the console and optionally to a file."""
@@ -90,6 +92,7 @@ def clean_up_directory(directory_path):
             except Exception as e:
                 print(f"Failed to delete {file_path}. Reason: {e}")
 
+
 def seed_everything(seed):
     """
     Set the seed on everything I can think of.
@@ -104,13 +107,50 @@ def seed_everything(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
-    
+
+
 def convert_from_string(value):
     """
     Convert a string representation of a Python literal into its actual type.
     Specifically useful for converting string tuples and dictionaries with tuple keys.
     """
     try:
-        return ast.literal_eval(value)
+        # Directly return if value is already in the expected type
+        if isinstance(value, (dict, tuple)):
+            return value
+
+        evaluated_value = ast.literal_eval(value)
+        # If the result is a dictionary with string keys that represent tuples,
+        # convert those keys into actual tuples
+        if isinstance(evaluated_value, dict):
+            return {ast.literal_eval(key): val for key, val in evaluated_value.items()}
+        else:
+            return evaluated_value
     except (ValueError, SyntaxError):
         return value
+
+
+def namespace_to_dict(value):
+    """
+    Converts an argparse.Namespace or a similar structure into a dictionary,
+    ensuring keys that are supposed to be tuples are correctly converted.
+    """
+    if isinstance(value, dict):
+        # Already a dictionary, apply tuple conversion if necessary
+        return {
+            (
+                ast.literal_eval(key)
+                if isinstance(key, str) and key.startswith("(")
+                else key
+            ): val
+            for key, val in value.items()
+        }
+    elif isinstance(value, argparse.Namespace):
+        # Convert namespace to dict and then apply the same logic recursively
+        return namespace_to_dict(vars(value))
+    else:
+        # For other types, attempt literal evaluation or return as is
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            return value
