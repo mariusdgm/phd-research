@@ -10,7 +10,7 @@ from argparse import Namespace
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(root_dir)
 
-from experiment_src import run_sampling_regret_experiment
+from experiment_src import run_adjusted_loss_baseline_experiment
 from experiments.experiment_utils import (
     setup_logger,
     seed_everything,
@@ -38,9 +38,9 @@ def run(opts: Namespace) -> None:
         f"Starting experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
 
-    loss_record, bm_error = run_sampling_regret_experiment(
+    loss_records, bm_error = run_adjusted_loss_baseline_experiment(
         tau=opts.tau,
-        seed=opts.run_id,
+        seed=opts.seed,
         rows=opts.rows,
         cols=opts.cols,
         start_state=opts.start_state,
@@ -49,8 +49,8 @@ def run(opts: Namespace) -> None:
         num_steps=opts.num_steps,
         epsilon=opts.epsilon,
         gamma=opts.gamma,
-        batch_size=opts.batch_size,
         min_samples=opts.min_samples,
+        batch_size=opts.batch_size,
         train_max_iterations=opts.train_max_iterations,
         logger=logger,
     )
@@ -59,19 +59,30 @@ def run(opts: Namespace) -> None:
         f"Finished experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
 
-    # Convert results to DataFrame (if not already in a suitable format)
-    df_loss = pd.DataFrame(
-        loss_record, columns=["epoch", "total_loss", "expected_value"]
+    df_loss_list = []
+    for model_key, loss_record in loss_records.items():
+        # Create a DataFrame for the current model's loss record
+        df_temp = pd.DataFrame(
+            loss_record, columns=["epoch", "total_loss", "expected_value"]
+        )
+        df_temp["model"] = model_key  # Dynamically set the model name based on the key
+        df_loss_list.append(df_temp)
+
+    # Concatenating all the DataFrames in the list
+    df_loss_combined = pd.concat(df_loss_list)
+
+    # Saving the combined DataFrame to a CSV file
+    loss_record_path = os.path.join(opts.out_dir, "loss_record_combined.csv")
+    df_loss_combined.to_csv(loss_record_path, index=False)
+
+    # Directly convert the bm_error dictionary to a DataFrame
+    df_bm_error = pd.DataFrame(
+        list(bm_error.items()), columns=["model", "bellman_error"]
     )
 
-    # Saving the loss record to a CSV file
-    loss_record_path = os.path.join(opts.out_dir, "loss_record.csv")
-    df_loss.to_csv(loss_record_path, index=False)
-
-    # Save Bellman error to a text file or as part of another CSV
-    bm_error_path = os.path.join(opts.out_dir, "bellman_error.txt")
-    with open(bm_error_path, "w") as f:
-        f.write(str(bm_error))
+    # Saving the Bellman error DataFrame to a CSV file
+    bm_error_path = os.path.join(opts.out_dir, "bellman_error_combined.csv")
+    df_bm_error.to_csv(bm_error_path, index=False)
 
     logger.info(f"Saved loss record to {loss_record_path}")
     logger.info(f"Saved Bellman error to {bm_error_path}")

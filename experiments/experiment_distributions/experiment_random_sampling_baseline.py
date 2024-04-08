@@ -49,7 +49,7 @@ def run(opts: Namespace) -> None:
         num_steps=opts.num_steps,
         epsilon=opts.epsilon,
         gamma=opts.gamma,
-        lower_bound_softmax=opts.lower_bound_softmax,
+        min_samples=opts.min_samples,
         batch_size=opts.batch_size,
         train_max_iterations=opts.train_max_iterations,
         logger=logger,

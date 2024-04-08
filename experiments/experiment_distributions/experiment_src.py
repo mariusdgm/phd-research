@@ -22,6 +22,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
+from collections import Counter
 
 import networkx as nx
 
@@ -46,29 +47,52 @@ def make_env(rows, cols, start_state, p_success, terminal_states, seed):
     )
 
 
-def softmax(logits, tau, lower_bound):
-    logits = np.array(
-        logits
-    )  # Ensure logits is a NumPy array for consistent operations
+def softmax(logits, tau):
+    logits = np.array(logits)  # Ensure logits is a NumPy array for consistency
     logits -= np.max(logits)  # Improves numerical stability
     exp_logits = np.exp(logits / tau)
     softmax_probs = exp_logits / np.sum(exp_logits)
-    adjusted_probs = np.clip(
-        softmax_probs + lower_bound, 0, 1
-    )  # Ensure probabilities are valid
-    adjusted_probs /= np.sum(adjusted_probs)
-    return adjusted_probs
+    return softmax_probs
 
 
-def generate_transitions_observations(transitions_list, num_steps, tau, lower_bound=0):
+def generate_transitions_observations(
+    transitions_list, num_steps, tau, min_samples=None
+):
     dset_size = len(transitions_list)
-    logits = np.random.uniform(0, 1, size=dset_size)
-    prob_dist = softmax(logits, tau, lower_bound)
 
-    sampled_indices = np.random.choice(
-        len(transitions_list), size=num_steps, p=prob_dist
+    # Validate min_samples if provided
+    if min_samples is not None:
+        if not isinstance(min_samples, int):
+            raise ValueError("min_samples must be an integer")
+        if min_samples * dset_size > num_steps:
+            raise ValueError(
+                "min_samples times length of transitions exceeds num_steps"
+            )
+
+        # Directly select each element in transitions_list min_samples times, considering their structure
+        repeated_transitions = [
+            transition for transition in transitions_list for _ in range(min_samples)
+        ]
+        remaining_steps = num_steps - (min_samples * dset_size)
+    else:
+        repeated_transitions = []
+        remaining_steps = num_steps
+
+    sampled_transitions = (
+        repeated_transitions  # Start with the manually repeated transitions
     )
-    sampled_transitions = [transitions_list[i] for i in sampled_indices]
+
+    if remaining_steps > 0:
+        # Prepare logits for the softmax sampling; logits could be based on some criteria or just random
+        logits = np.random.uniform(0, 1, size=dset_size)
+        prob_dist = softmax(logits, tau)
+
+        # Sample the remaining transitions based on the softmax distribution
+        sampled_indices = np.random.choice(
+            dset_size, size=remaining_steps, p=prob_dist, replace=True
+        )
+        sampled_transitions += [transitions_list[i] for i in sampled_indices]
+
     return sampled_transitions
 
 
@@ -148,13 +172,13 @@ class TransitionDataset(Dataset):
             torch.tensor(state, dtype=torch.float),
             action,
             torch.tensor(next_state, dtype=torch.float),
-            reward,
+            torch.tensor(reward, dtype=torch.float),
             done,
         )
 
 
 def train_net_with_neural_fitted_q(
-    dqn,
+    net,
     transitions,
     Q_pi_random,
     states,
@@ -168,10 +192,10 @@ def train_net_with_neural_fitted_q(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    dqn.train()
+    net.train()
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    optimizer = optim.Adam(dqn.parameters(), lr=0.001)
+    optimizer = optim.Adam(net.parameters(), lr=0.001)
     loss_fn = nn.MSELoss()
     loss_record = []
 
@@ -183,8 +207,8 @@ def train_net_with_neural_fitted_q(
 
         for state, action, next_state, reward, done in dataloader:
             optimizer.zero_grad()
-            q_values = dqn(state)
-            next_q_values = dqn(next_state)
+            q_values = net(state)
+            next_q_values = net(next_state)
             max_next_q_values = next_q_values.detach().max(1)[0]
             target_q_values = q_values.clone()
 
@@ -192,7 +216,16 @@ def train_net_with_neural_fitted_q(
                 update = (
                     reward[i] if done[i] else reward[i] + gamma * max_next_q_values[i]
                 )
-                target_q_values[i, action[i]] = update
+                target_q_values = q_values.clone()
+
+                # During the loop, you can modify target_q_values as before since it's now a separate tensor not directly involved in the forward computation
+                for i in range(len(done)):
+                    update = (
+                        reward[i]
+                        if done[i]
+                        else reward[i] + gamma * max_next_q_values[i]
+                    )
+                    target_q_values[i, action[i]] = update
 
             loss = loss_fn(q_values, target_q_values)
             loss.backward()
@@ -204,7 +237,7 @@ def train_net_with_neural_fitted_q(
             state_tensor = torch.tensor([state], dtype=torch.float).unsqueeze(
                 0
             )  # Assume state is a list or tuple
-            q_values = dqn(state_tensor).detach().numpy().squeeze()
+            q_values = net(state_tensor).detach().numpy().squeeze()
             for action in actions:
                 abs_diff = abs(q_values[action] - Q_pi_random[state][action])
                 abs_diffs.append(abs_diff)
@@ -227,6 +260,76 @@ def train_net_with_neural_fitted_q(
     return loss_record
 
 
+def train_net_with_neural_fitted_q_scaled_loss(
+    net,
+    transitions,
+    Q_pi_random,
+    states,
+    actions,
+    gamma,
+    epsilon,
+    batch_size,
+    max_iterations,
+    logger=None,
+):
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    net.train()
+
+    transitions_for_counting = [
+        (s, a, ns, r, int(d)) for s, a, ns, r, d, _ in transitions
+    ]
+    transition_counts = Counter(transitions_for_counting)
+
+    # Calculate expected frequency under uniform distribution
+    N_total = len(transitions)
+    N_unique = len(set(transitions_for_counting))
+    expected_frequency = N_total / N_unique
+
+    # Compute scaling factor relative to uniform distribution
+    inverse_frequency_scaling = {
+        t: expected_frequency / count for t, count in transition_counts.items()
+    }
+
+    dataset = TransitionDataset(transitions)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    loss_fn = nn.MSELoss(reduction="none")
+    loss_record = []
+
+    for epoch in range(max_iterations):
+        total_loss = 0
+        for state, action, next_state, reward, done in dataloader:
+            optimizer.zero_grad()
+            q_values = net(state)
+            next_q_values = net(next_state)
+            max_next_q_values = next_q_values.detach().max(1)[0].unsqueeze(1)
+            target_q_values = reward.unsqueeze(1) + gamma * max_next_q_values * (
+                ~done.unsqueeze(1)
+            )
+            target_q_values = torch.where(
+                done.unsqueeze(1), reward.unsqueeze(1), target_q_values
+            )
+
+            scaled_losses = torch.zeros(size=(len(reward), 1), device=q_values.device)
+            for i, trans in enumerate(zip(state, action, next_state, reward, done)):
+                transition = tuple(trans[:5])
+                scale_factor = inverse_frequency_scaling.get(transition, 1.0)
+                loss = loss_fn(q_values[i, action[i]].unsqueeze(0), target_q_values[i])
+                scaled_losses[i] = loss * scale_factor
+
+            loss = scaled_losses.mean()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+
+        loss_record.append((epoch, total_loss, 0))
+
+    logger.info(f"Exiting after {epoch + 1} epochs with total loss {total_loss}")
+    return loss_record
+
+
 def compute_bellmans_error(dqn, validation_transitions, gamma=0.99):
     dqn.eval()  # Set the DQN to evaluation mode
     bellmans_errors = []
@@ -246,6 +349,36 @@ def compute_bellmans_error(dqn, validation_transitions, gamma=0.99):
                 next_q_values = dqn(next_state_tensor)
                 max_next_q_value = torch.max(next_q_values)
                 target_q_value = reward + gamma * max_next_q_value
+
+            # Bellman's error
+            bellman_error = abs(q_value - target_q_value)
+            bellmans_errors.append(bellman_error.item())
+
+    # Compute the mean Bellman's error over all transitions
+    mean_bellmans_error = sum(bellmans_errors) / len(bellmans_errors)
+    return mean_bellmans_error
+
+
+def compute_bellmans_error_mean(dqn, validation_transitions, gamma=0.99):
+    dqn.eval()  # Set the DQN to evaluation mode
+    bellmans_errors = []
+
+    with torch.no_grad():  # No need to compute gradients
+        for state, action, next_state, reward, done, _ in validation_transitions:
+            state_tensor = torch.tensor([state], dtype=torch.float)
+            next_state_tensor = torch.tensor([next_state], dtype=torch.float)
+
+            # Predicted Q-value for the current state and action
+            q_value = dqn(state_tensor)[0, action]
+
+            # Target Q-value using adjusted Bellman equation
+            if done:
+                target_q_value = reward
+            else:
+                next_q_values = dqn(next_state_tensor)
+                # Use mean instead of max for the next Q values
+                mean_next_q_value = torch.mean(next_q_values)
+                target_q_value = reward + gamma * mean_next_q_value
 
             # Bellman's error
             bellman_error = abs(q_value - target_q_value)
@@ -287,7 +420,7 @@ def run_sampling_regret_experiment(
     num_steps,
     epsilon,
     gamma,
-    lower_bound_softmax,
+    min_samples,
     batch_size,
     train_max_iterations,
     logger=None,
@@ -316,7 +449,7 @@ def run_sampling_regret_experiment(
         transitions_train,
         num_steps,
         tau=tau,
-        lower_bound=lower_bound_softmax / len(transitions_train),
+        min_samples=min_samples,
     )
 
     ### Training
@@ -380,7 +513,7 @@ def generate_random_policy_transitions(
 
 
 def train_net_with_value_function_approximation(
-    dqn,
+    net,
     transitions,
     states,
     actions,
@@ -393,10 +526,10 @@ def train_net_with_value_function_approximation(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    dqn.train()
+    net.train()
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    optimizer = optim.Adam(dqn.parameters(), lr=0.001)
+    optimizer = optim.Adam(net.parameters(), lr=0.001)
     loss_fn = nn.MSELoss()
     loss_record = []
 
@@ -404,9 +537,9 @@ def train_net_with_value_function_approximation(
         total_loss = 0
         for state, action, next_state, reward, done in dataloader:
             optimizer.zero_grad()
-            q_values = dqn(state)
+            q_values = net(state)
 
-            next_q_values = dqn(next_state)
+            next_q_values = net(next_state)
             # Compute expected Q-value for the next state using uniform random policy
             expected_next_q_values = next_q_values.detach().mean(dim=1)
 
@@ -442,7 +575,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     num_steps,
     epsilon,
     gamma,
-    lower_bound_softmax,
+    min_samples,
     batch_size,
     train_max_iterations,
     logger=None,
@@ -468,7 +601,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         transitions_train,
         num_steps,
         tau=tau,
-        lower_bound=lower_bound_softmax / len(transitions_train),
+        min_samples=min_samples,
     )
 
     ### Training
@@ -476,10 +609,10 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     output_size = len(actions)
 
     # Initialize the DQN
-    dqn_random_policy = QNET(input_size, output_size)
+    net_random_policy = QNET(input_size, output_size)
 
     loss_record_random_policy = train_net_with_value_function_approximation(
-        dqn_random_policy,
+        net_random_policy,
         sampled_transitions_train,
         states,
         actions,
@@ -490,8 +623,8 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         logger,
     )
 
-    bm_error = compute_bellmans_error(
-        dqn_random_policy, validation_transitions=transitions_val, gamma=gamma
+    bm_error = compute_bellmans_error_mean(
+        net_random_policy, validation_transitions=transitions_val, gamma=gamma
     )
 
     return loss_record_random_policy, bm_error
@@ -508,7 +641,7 @@ def run_baseline_random_policy_experiment(
     num_steps,
     epsilon,
     gamma,
-    lower_bound_softmax,
+    min_samples,
     batch_size,
     train_max_iterations,
     logger=None,
@@ -554,11 +687,113 @@ def run_baseline_random_policy_experiment(
         logger,
     )
 
-    bm_error = compute_bellmans_error(
+    bm_error = compute_bellmans_error_mean(
         qnet_random_policy, validation_transitions=transitions_val, gamma=gamma
     )
 
     return loss_record_random_policy, bm_error
+
+
+def run_adjusted_loss_baseline_experiment(
+    tau,
+    seed,
+    rows,
+    cols,
+    start_state,
+    p_success,
+    terminal_states,
+    num_steps,
+    epsilon,
+    gamma,
+    min_samples,
+    batch_size,
+    train_max_iterations,
+    logger=None,
+):
+    np.random.seed(seed)
+
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    env = make_env(rows, cols, start_state, p_success, terminal_states, seed)
+
+    states = list(set([s for s, _ in env.mdp.keys()]))
+    actions = list(set([a for _, a in env.mdp.keys()]))
+
+    transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
+
+    transitions_train, transitions_val = generate_train_test_split_with_valid_path(
+        transitions_list=transitions_list,
+        start_state=start_state,
+        terminal_states=terminal_states,
+    )
+
+    train_dataset_transitions = generate_transitions_observations(
+        transitions_train, num_steps, tau, min_samples=min_samples
+    )
+    # train_dataset_transitions = generate_random_policy_transitions(
+    #     transitions_train, num_steps, env, actions, seed, logger
+    # )
+
+    ### Training
+    input_size = len(states[0])  # Or another way to represent the size of your input
+    output_size = len(actions)
+
+    states = list(set([s for s, _ in env.mdp.keys()]))
+    actions = list(set([a for _, a in env.mdp.keys()]))
+    random_policy = create_random_policy(states, actions)
+
+    Q = {state: {action: 0 for action in actions} for state in states}
+    Q_pi_random = random_policy_evaluation_q_stochastic(
+        states, actions, random_policy, Q, env.mdp, gamma, epsilon
+    )
+
+    # Initialize and train network with original loss
+    qnet = QNET(input_size, output_size)
+    loss_record_random_policy = train_net_with_neural_fitted_q(
+        qnet,
+        train_dataset_transitions,
+        Q_pi_random,
+        states,
+        actions,
+        gamma,
+        epsilon,
+        batch_size,
+        train_max_iterations,
+        logger,
+    )
+
+    # Initialize and train network with original loss
+    qnet_adjusted_loss = QNET(input_size, output_size)
+    loss_record_random_policy_adjusted = train_net_with_neural_fitted_q_scaled_loss(
+        qnet_adjusted_loss,
+        train_dataset_transitions,
+        Q_pi_random,
+        states,
+        actions,
+        gamma,
+        epsilon,
+        batch_size,
+        train_max_iterations,
+        logger,
+    )
+
+    bm_error = compute_bellmans_error(
+        qnet, validation_transitions=transitions_val, gamma=gamma
+    )
+
+    bm_error_adjusted = compute_bellmans_error(
+        qnet_adjusted_loss, validation_transitions=transitions_val, gamma=gamma
+    )
+
+    loss = {
+        "qnet_original": loss_record_random_policy,
+        "qnet_adjusted_loss": loss_record_random_policy_adjusted,
+    }
+
+    bm_error = {"qnet_original": bm_error, "qnet_adjusted_loss": bm_error_adjusted}
+
+    return loss, bm_error
 
 
 def build_graph_with_networkx(transitions, start_state, terminal_states):
@@ -579,7 +814,9 @@ def check_path_existence_to_any_terminal(G, start_state, terminal_states):
         return False
 
     # Check for direct reachability to any terminal state
-    terminal_reachable = any(list(G.in_edges(terminal_state)) for terminal_state in terminal_states.keys())
+    terminal_reachable = any(
+        list(G.in_edges(terminal_state)) for terminal_state in terminal_states.keys()
+    )
     if not terminal_reachable:
         return False
 
