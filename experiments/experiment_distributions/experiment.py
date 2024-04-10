@@ -13,7 +13,6 @@ sys.path.append(root_dir)
 from experiment_src import run_sampling_regret_experiment
 from experiments.experiment_utils import (
     setup_logger,
-    seed_everything,
     convert_from_string,
     namespace_to_dict,
 )
@@ -32,15 +31,14 @@ def run(opts: Namespace) -> None:
         # Use PyYAML to write the dictionary to a YAML file
         yaml.dump(opts_dict, f)
 
-    seed_everything(opts.seed)
-
     logger.info(
         f"Starting experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
 
     loss_record, bm_error = run_sampling_regret_experiment(
         tau=opts.tau,
-        seed=opts.run_id,
+        seed=opts.seed,
+        run_id=opts.run_id,
         rows=opts.rows,
         cols=opts.cols,
         start_state=opts.start_state,
@@ -61,7 +59,7 @@ def run(opts: Namespace) -> None:
 
     # Convert results to DataFrame (if not already in a suitable format)
     df_loss = pd.DataFrame(
-        loss_record, columns=["epoch", "total_loss", "expected_value"]
+        loss_record, columns=["epoch", "total_loss"]
     )
 
     # Saving the loss record to a CSV file

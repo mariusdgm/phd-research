@@ -17,6 +17,7 @@ from rl_envs_forge.envs.grid_world.grid_world import Action
 
 from overfitting.src.utils import create_random_policy
 from overfitting.src.policy_iteration import random_policy_evaluation_q_stochastic
+from experiments.experiment_utils import seed_everything
 
 import torch
 import torch.nn as nn
@@ -177,6 +178,30 @@ class TransitionDataset(Dataset):
         )
 
 
+class TransitionDatasetWithScaling(Dataset):
+    def __init__(self, transitions, inverse_frequency_scaling):
+        self.transitions = transitions
+        self.inverse_frequency_scaling = inverse_frequency_scaling
+
+    def __len__(self):
+        return len(self.transitions)
+
+    def __getitem__(self, idx):
+
+        state, action, next_state, reward, done, _ = self.transitions[idx]
+        transition_for_counting = (state, action, next_state, reward, int(done))
+        scale_factor = self.inverse_frequency_scaling.get(transition_for_counting)
+
+        return (
+            torch.tensor(state, dtype=torch.float),
+            action,
+            torch.tensor(next_state, dtype=torch.float),
+            torch.tensor(reward, dtype=torch.float),
+            done,
+            scale_factor,  # Return the scale factor as part of the sample
+        )
+
+
 def train_net_with_neural_fitted_q(
     net,
     transitions,
@@ -196,66 +221,24 @@ def train_net_with_neural_fitted_q(
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optimizer = optim.Adam(net.parameters(), lr=0.001)
-    loss_fn = nn.MSELoss()
     loss_record = []
 
     for epoch in range(max_iterations):
         total_loss = 0
-        abs_diffs = (
-            []
-        )  # List to store absolute differences for the expected value calculation
 
         for state, action, next_state, reward, done in dataloader:
             optimizer.zero_grad()
-            q_values = net(state)
-            next_q_values = net(next_state)
-            max_next_q_values = next_q_values.detach().max(1)[0]
-            target_q_values = q_values.clone()
 
-            for i in range(len(done)):
-                update = (
-                    reward[i] if done[i] else reward[i] + gamma * max_next_q_values[i]
-                )
-                target_q_values = q_values.clone()
+            bellmans_errors = bellman_error(
+                net, state, action, next_state, reward, done, mode="max", gamma=gamma
+            )
 
-                # During the loop, you can modify target_q_values as before since it's now a separate tensor not directly involved in the forward computation
-                for i in range(len(done)):
-                    update = (
-                        reward[i]
-                        if done[i]
-                        else reward[i] + gamma * max_next_q_values[i]
-                    )
-                    target_q_values[i, action[i]] = update
-
-            loss = loss_fn(q_values, target_q_values)
+            loss = bellmans_errors.mean()
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
 
-        # After updating the network, compute the expected value of |Q_train - Q_pi_random| over the validation set
-        for state in states:
-            state_tensor = torch.tensor([state], dtype=torch.float).unsqueeze(
-                0
-            )  # Assume state is a list or tuple
-            q_values = net(state_tensor).detach().numpy().squeeze()
-            for action in actions:
-                abs_diff = abs(q_values[action] - Q_pi_random[state][action])
-                abs_diffs.append(abs_diff)
-
-        expected_value = np.mean(abs_diffs)  # Compute the mean of absolute differences
-
-        loss_record.append((epoch, total_loss, expected_value))
-
-        # if expected_value < epsilon:
-        #     print(
-        #         f"Converged after {epoch + 1} epochs with expected value {expected_value}"
-        #     )
-        #     logger.info(f"Converged after {epoch + 1} epochs with expected value {expected_value}")
-        #     break
-
-    logger.info(
-        f"Exiting after {epoch + 1} epochs with expected value {expected_value}"
-    )
+        loss_record.append((epoch, total_loss))
 
     return loss_record
 
@@ -292,7 +275,7 @@ def train_net_with_neural_fitted_q_scaled_loss(
         t: expected_frequency / count for t, count in transition_counts.items()
     }
 
-    dataset = TransitionDataset(transitions)
+    dataset = TransitionDatasetWithScaling(transitions, inverse_frequency_scaling)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optimizer = optim.Adam(net.parameters(), lr=0.001)
     loss_fn = nn.MSELoss(reduction="none")
@@ -300,93 +283,96 @@ def train_net_with_neural_fitted_q_scaled_loss(
 
     for epoch in range(max_iterations):
         total_loss = 0
-        for state, action, next_state, reward, done in dataloader:
+        for state, action, next_state, reward, done, scale_factor in dataloader:
             optimizer.zero_grad()
-            q_values = net(state)
-            next_q_values = net(next_state)
-            max_next_q_values = next_q_values.detach().max(1)[0].unsqueeze(1)
-            target_q_values = reward.unsqueeze(1) + gamma * max_next_q_values * (
-                ~done.unsqueeze(1)
-            )
-            target_q_values = torch.where(
-                done.unsqueeze(1), reward.unsqueeze(1), target_q_values
+
+            bellmans_errors = bellman_error(
+                net, state, action, next_state, reward, done, mode="max", gamma=gamma
             )
 
-            scaled_losses = torch.zeros(size=(len(reward), 1), device=q_values.device)
-            for i, trans in enumerate(zip(state, action, next_state, reward, done)):
-                transition = tuple(trans[:5])
-                scale_factor = inverse_frequency_scaling.get(transition, 1.0)
-                loss = loss_fn(q_values[i, action[i]].unsqueeze(0), target_q_values[i])
-                scaled_losses[i] = loss * scale_factor
+            # Apply scaling factors to each individual loss
+            scaled_losses = bellmans_errors * scale_factor.to(bellmans_errors.device)
 
+            # Compute mean of scaled losses for backpropagation
             loss = scaled_losses.mean()
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
 
-        loss_record.append((epoch, total_loss, 0))
+        loss_record.append((epoch, total_loss))
 
     logger.info(f"Exiting after {epoch + 1} epochs with total loss {total_loss}")
     return loss_record
 
 
-def compute_bellmans_error(dqn, validation_transitions, gamma=0.99):
-    dqn.eval()  # Set the DQN to evaluation mode
-    bellmans_errors = []
+def compute_validation_bellmans_error(
+    model, validation_transitions, error_mode, gamma=0.99
+):
+    model.eval()  # Set the DQN to evaluation mode
 
-    with torch.no_grad():  # No need to compute gradients
-        for state, action, next_state, reward, done, _ in validation_transitions:
-            state_tensor = torch.tensor([state], dtype=torch.float)
-            next_state_tensor = torch.tensor([next_state], dtype=torch.float)
+    with torch.no_grad():
+        # Prepare tensors for the whole batch
+        states = torch.tensor([t[0] for t in validation_transitions], dtype=torch.float)
+        actions = torch.tensor(
+            [t[1] for t in validation_transitions], dtype=torch.int64
+        )
+        next_states = torch.tensor(
+            [t[2] for t in validation_transitions], dtype=torch.float
+        )
+        rewards = torch.tensor(
+            [t[3] for t in validation_transitions], dtype=torch.float
+        )
+        dones = torch.tensor([t[4] for t in validation_transitions], dtype=torch.bool)
 
-            # Predicted Q-value for the current state and action
-            q_value = dqn(state_tensor)[0, action]
+        # Compute Bellman error
+        bellmans_error = bellman_error(
+            model,
+            states,
+            actions,
+            next_states,
+            rewards,
+            dones,
+            mode=error_mode,
+            gamma=gamma,
+        )
 
-            # Target Q-value using Bellman equation
-            if done:
-                target_q_value = reward
-            else:
-                next_q_values = dqn(next_state_tensor)
-                max_next_q_value = torch.max(next_q_values)
-                target_q_value = reward + gamma * max_next_q_value
-
-            # Bellman's error
-            bellman_error = abs(q_value - target_q_value)
-            bellmans_errors.append(bellman_error.item())
-
-    # Compute the mean Bellman's error over all transitions
-    mean_bellmans_error = sum(bellmans_errors) / len(bellmans_errors)
-    return mean_bellmans_error
+    return bellmans_error.mean().item()
 
 
-def compute_bellmans_error_mean(dqn, validation_transitions, gamma=0.99):
-    dqn.eval()  # Set the DQN to evaluation mode
-    bellmans_errors = []
+def bellman_error(
+    model, states, actions, next_states, rewards, dones, mode="max", gamma=0.99
+):
+    """
+    Calculates the bellman error for a batch of transitions.
 
-    with torch.no_grad():  # No need to compute gradients
-        for state, action, next_state, reward, done, _ in validation_transitions:
-            state_tensor = torch.tensor([state], dtype=torch.float)
-            next_state_tensor = torch.tensor([next_state], dtype=torch.float)
+    This function is intended for use within a training loop, where the resulting
+    error will be used for backpropagation.
+    """
 
-            # Predicted Q-value for the current state and action
-            q_value = dqn(state_tensor)[0, action]
+    model.eval()  # Ensure the model is in evaluation mode for this calculation
 
-            # Target Q-value using adjusted Bellman equation
-            if done:
-                target_q_value = reward
-            else:
-                next_q_values = dqn(next_state_tensor)
-                # Use mean instead of max for the next Q values
-                mean_next_q_value = torch.mean(next_q_values)
-                target_q_value = reward + gamma * mean_next_q_value
+    # Predict Q-values for all states and next states
+    q_values = model(states)
+    next_q_values = model(next_states)
 
-            # Bellman's error
-            bellman_error = abs(q_value - target_q_value)
-            bellmans_errors.append(bellman_error.item())
+    # Compute max or mean Q-value for next states based on mode
+    if mode == "max":
+        next_q_values = next_q_values.max(1)[0]
+    elif mode == "mean":
+        next_q_values = next_q_values.mean(dim=1)
 
-    # Compute the mean Bellman's error over all transitions
-    mean_bellmans_error = sum(bellmans_errors) / len(bellmans_errors)
-    return mean_bellmans_error
+    # Compute target Q-values
+    target_q_values = rewards + gamma * next_q_values * (~dones)
+    target_q_values[dones] = rewards[dones]  # Adjust for terminal states
+
+    # Select the Q-values for the actions taken
+    action_q_values = q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
+
+    # Compute Bellman's error using MSE Loss
+    loss_fn = nn.MSELoss(reduction="none")
+    bellmans_error = loss_fn(action_q_values, target_q_values)
+
+    return bellmans_error
 
 
 class QNET(nn.Module):
@@ -412,6 +398,7 @@ def on_policy_loss(predictions, targets):
 def run_sampling_regret_experiment(
     tau,
     seed,
+    run_id,
     rows,
     cols,
     start_state,
@@ -428,7 +415,8 @@ def run_sampling_regret_experiment(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    env = make_env(rows, cols, start_state, p_success, terminal_states, seed)
+    seed_everything(run_id)
+    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -456,6 +444,7 @@ def run_sampling_regret_experiment(
     input_size = len(states[0])  # Or another way to represent the size of your input
     output_size = len(actions)
 
+    seed_everything(seed)
     # Initialize the DQN
     dqn = QNET(input_size, output_size)
 
@@ -472,8 +461,8 @@ def run_sampling_regret_experiment(
         logger=logger,
     )
 
-    bm_error = compute_bellmans_error(
-        dqn, validation_transitions=transitions_val, gamma=gamma
+    bm_error = compute_validation_bellmans_error(
+        dqn, validation_transitions=transitions_val, error_mode="max", gamma=gamma
     )
 
     return loss_record, bm_error
@@ -542,15 +531,10 @@ def train_net_with_value_function_approximation(
             next_q_values = net(next_state)
             # Compute expected Q-value for the next state using uniform random policy
             expected_next_q_values = next_q_values.detach().mean(dim=1)
+            target_q_values = torch.zeros_like(q_values)
 
-            target_q_values = q_values.clone()
-            for i in range(len(done)):
-                update = (
-                    reward[i]
-                    if done[i]
-                    else reward[i] + gamma * expected_next_q_values[i]
-                )
-                target_q_values[i, action[i]] = update
+            updates = reward + gamma * expected_next_q_values * (~done)
+            target_q_values[torch.arange(len(action)), action.long()] = updates
 
             loss = loss_fn(q_values, target_q_values)
             loss.backward()
@@ -623,8 +607,11 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         logger,
     )
 
-    bm_error = compute_bellmans_error_mean(
-        net_random_policy, validation_transitions=transitions_val, gamma=gamma
+    bm_error = compute_validation_bellmans_error(
+        net_random_policy,
+        validation_transitions=transitions_val,
+        error_mode="mean",
+        gamma=gamma,
     )
 
     return loss_record_random_policy, bm_error
@@ -687,8 +674,11 @@ def run_baseline_random_policy_experiment(
         logger,
     )
 
-    bm_error = compute_bellmans_error_mean(
-        qnet_random_policy, validation_transitions=transitions_val, gamma=gamma
+    bm_error = compute_validation_bellmans_error(
+        qnet_random_policy,
+        validation_transitions=transitions_val,
+        error_mode="mean",
+        gamma=gamma,
     )
 
     return loss_record_random_policy, bm_error
@@ -778,12 +768,15 @@ def run_adjusted_loss_baseline_experiment(
         logger,
     )
 
-    bm_error = compute_bellmans_error(
-        qnet, validation_transitions=transitions_val, gamma=gamma
+    bm_error = compute_validation_bellmans_error(
+        qnet, validation_transitions=transitions_val, error_mode="max", gamma=gamma
     )
 
-    bm_error_adjusted = compute_bellmans_error(
-        qnet_adjusted_loss, validation_transitions=transitions_val, gamma=gamma
+    bm_error_adjusted = compute_validation_bellmans_error(
+        qnet_adjusted_loss,
+        validation_transitions=transitions_val,
+        error_mode="max",
+        gamma=gamma,
     )
 
     loss = {

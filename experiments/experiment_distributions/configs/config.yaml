@@ -1,4 +1,4 @@
 # parameter variants
 
-min_samples: [20]
-tau: [0.001, 0.01, 0.1, 1.0, 10]
+min_samples: [10]
+tau: [0.001, 0.01, 0.1, 1.0]
