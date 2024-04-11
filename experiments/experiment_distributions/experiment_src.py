@@ -161,25 +161,7 @@ def compute_regret(Q_star, Q_td, states, actions):
 
 
 class TransitionDataset(Dataset):
-    def __init__(self, transitions):
-        self.transitions = transitions
-
-    def __len__(self):
-        return len(self.transitions)
-
-    def __getitem__(self, idx):
-        state, action, next_state, reward, done, _ = self.transitions[idx]
-        return (
-            torch.tensor(state, dtype=torch.float),
-            action,
-            torch.tensor(next_state, dtype=torch.float),
-            torch.tensor(reward, dtype=torch.float),
-            done,
-        )
-
-
-class TransitionDatasetWithScaling(Dataset):
-    def __init__(self, transitions, inverse_frequency_scaling):
+    def __init__(self, transitions, inverse_frequency_scaling=None):
         self.transitions = transitions
         self.inverse_frequency_scaling = inverse_frequency_scaling
 
@@ -189,16 +171,25 @@ class TransitionDatasetWithScaling(Dataset):
     def __getitem__(self, idx):
 
         state, action, next_state, reward, done, _ = self.transitions[idx]
-        transition_for_counting = (state, action, next_state, reward, int(done))
-        scale_factor = self.inverse_frequency_scaling.get(transition_for_counting)
+        state_tensor = torch.tensor(state, dtype=torch.float)
+        next_state_tensor = torch.tensor(next_state, dtype=torch.float)
+        reward_tensor = torch.tensor(reward, dtype=torch.float)
+
+        if self.inverse_frequency_scaling:
+            transition_for_counting = (state, action, next_state, reward, int(done))
+            scale_factor = self.inverse_frequency_scaling.get(
+                transition_for_counting, 1.0
+            )
+        else:
+            scale_factor = 1.0  # Default scale factor when no scaling is provided
 
         return (
-            torch.tensor(state, dtype=torch.float),
+            state_tensor,
             action,
-            torch.tensor(next_state, dtype=torch.float),
-            torch.tensor(reward, dtype=torch.float),
+            next_state_tensor,
+            reward_tensor,
             done,
-            scale_factor,  # Return the scale factor as part of the sample
+            scale_factor,
         )
 
 
@@ -212,26 +203,39 @@ def train_net_with_neural_fitted_q(
     epsilon,
     batch_size,
     max_iterations,
+    frequency_scaling=False,
     logger=None,
 ):
     if logger is None:
         logger = logging.getLogger(__name__)
 
     net.train()
-    dataset = TransitionDataset(transitions)
+
+    if frequency_scaling:
+        inverse_frequency_scaling = get_frequency_scaling(transitions)
+        dataset = TransitionDataset(transitions, inverse_frequency_scaling)
+    else:
+        dataset = TransitionDataset(transitions)
+
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optimizer = optim.Adam(net.parameters(), lr=0.001)
     loss_record = []
 
     for epoch in range(max_iterations):
         total_loss = 0
-
-        for state, action, next_state, reward, done in dataloader:
+        for state, action, next_state, reward, done, scale_factor in dataloader:
             optimizer.zero_grad()
 
             bellmans_errors = bellman_error(
                 net, state, action, next_state, reward, done, mode="max", gamma=gamma
             )
+            net.train()
+
+            if frequency_scaling:
+                scale_factor = inverse_frequency_scaling.get(
+                    (state, action, next_state, reward, done), 1
+                )
+                bellmans_errors = scale_factor * bellmans_errors
 
             loss = bellmans_errors.mean()
             loss.backward()
@@ -243,23 +247,7 @@ def train_net_with_neural_fitted_q(
     return loss_record
 
 
-def train_net_with_neural_fitted_q_scaled_loss(
-    net,
-    transitions,
-    Q_pi_random,
-    states,
-    actions,
-    gamma,
-    epsilon,
-    batch_size,
-    max_iterations,
-    logger=None,
-):
-    if logger is None:
-        logger = logging.getLogger(__name__)
-
-    net.train()
-
+def get_frequency_scaling(transitions):
     transitions_for_counting = [
         (s, a, ns, r, int(d)) for s, a, ns, r, d, _ in transitions
     ]
@@ -274,35 +262,7 @@ def train_net_with_neural_fitted_q_scaled_loss(
     inverse_frequency_scaling = {
         t: expected_frequency / count for t, count in transition_counts.items()
     }
-
-    dataset = TransitionDatasetWithScaling(transitions, inverse_frequency_scaling)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
-    loss_fn = nn.MSELoss(reduction="none")
-    loss_record = []
-
-    for epoch in range(max_iterations):
-        total_loss = 0
-        for state, action, next_state, reward, done, scale_factor in dataloader:
-            optimizer.zero_grad()
-
-            bellmans_errors = bellman_error(
-                net, state, action, next_state, reward, done, mode="max", gamma=gamma
-            )
-
-            # Apply scaling factors to each individual loss
-            scaled_losses = bellmans_errors * scale_factor.to(bellmans_errors.device)
-
-            # Compute mean of scaled losses for backpropagation
-            loss = scaled_losses.mean()
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-
-        loss_record.append((epoch, total_loss))
-
-    logger.info(f"Exiting after {epoch + 1} epochs with total loss {total_loss}")
-    return loss_record
+    return inverse_frequency_scaling
 
 
 def compute_validation_bellmans_error(
@@ -357,16 +317,15 @@ def bellman_error(
 
     # Compute max or mean Q-value for next states based on mode
     if mode == "max":
-        next_q_values = next_q_values.max(1)[0]
+        next_q_values = next_q_values.detach().max(1)[0]
     elif mode == "mean":
-        next_q_values = next_q_values.mean(dim=1)
+        next_q_values = next_q_values.detach().mean(dim=1)
 
     # Compute target Q-values
     target_q_values = rewards + gamma * next_q_values * (~dones)
-    target_q_values[dones] = rewards[dones]  # Adjust for terminal states
 
     # Select the Q-values for the actions taken
-    action_q_values = q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
+    action_q_values = q_values.gather(1, actions.long().unsqueeze(1)).squeeze(1)
 
     # Compute Bellman's error using MSE Loss
     loss_fn = nn.MSELoss(reduction="none")
@@ -421,7 +380,6 @@ def run_sampling_regret_experiment(
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
     random_policy = create_random_policy(states, actions)
-
     Q = {state: {action: 0 for action in actions} for state in states}
     Q_pi_random = random_policy_evaluation_q_stochastic(
         states, actions, random_policy, Q, env.mdp, gamma, epsilon
@@ -432,7 +390,7 @@ def run_sampling_regret_experiment(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
-        seed=run_id
+        seed=run_id,
     )
     sampled_transitions_train = generate_transitions_observations(
         transitions_train,
@@ -459,20 +417,24 @@ def run_sampling_regret_experiment(
         epsilon,
         batch_size=batch_size,
         max_iterations=train_max_iterations,
+        frequency_scaling=False,
         logger=logger,
     )
 
-    bm_error = compute_validation_bellmans_error(
+    bm_error_validation = compute_validation_bellmans_error(
         dqn, validation_transitions=transitions_val, error_mode="max", gamma=gamma
     )
 
-    return loss_record, bm_error
+    bm_error_train = compute_validation_bellmans_error(
+        dqn, validation_transitions=transitions_train, error_mode="max", gamma=gamma
+    )
+
+    return loss_record, bm_error_validation, bm_error_train
 
 
 def generate_random_policy_transitions(
-    transitions_list, num_steps, env, actions, seed, logger
+    transitions_list, num_steps, env, actions
 ):
-    np.random.seed(seed)
     transitions = []
 
     # Convert transitions_train to a set with float rewards for efficient lookup
@@ -582,7 +544,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
-        seed=run_id
+        seed=run_id,
     )
 
     sampled_transitions_train = generate_transitions_observations(
@@ -649,6 +611,11 @@ def run_baseline_random_policy_experiment(
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
+    random_policy = create_random_policy(states, actions)
+    Q = {state: {action: 0 for action in actions} for state in states}
+    Q_pi_random = random_policy_evaluation_q_stochastic(
+        states, actions, random_policy, Q, env.mdp, gamma, epsilon
+    )
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
 
@@ -656,11 +623,11 @@ def run_baseline_random_policy_experiment(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
-        seed=run_id
+        seed=run_id,
     )
 
     random_policy_transitions = generate_random_policy_transitions(
-        transitions_train, num_steps, env, actions, seed, logger
+        transitions_train, num_steps, env, actions
     )
 
     seed_everything(seed)
@@ -672,26 +639,35 @@ def run_baseline_random_policy_experiment(
     # Initialize the DQN
     qnet_random_policy = QNET(input_size, output_size)
 
-    loss_record_random_policy = train_net_with_value_function_approximation(
+    loss_record = train_net_with_neural_fitted_q(
         qnet_random_policy,
         random_policy_transitions,
+        Q_pi_random,
         states,
         actions,
         gamma,
         epsilon,
-        batch_size,
-        train_max_iterations,
-        logger,
+        batch_size=batch_size,
+        max_iterations=train_max_iterations,
+        frequency_scaling=False,
+        logger=logger,
     )
 
-    bm_error = compute_validation_bellmans_error(
+    bm_error_validation = compute_validation_bellmans_error(
         qnet_random_policy,
         validation_transitions=transitions_val,
-        error_mode="mean",
+        error_mode="max",
         gamma=gamma,
     )
 
-    return loss_record_random_policy, bm_error
+    bm_error_train = compute_validation_bellmans_error(
+        qnet_random_policy,
+        validation_transitions=transitions_train,
+        error_mode="max",
+        gamma=gamma,
+    )
+
+    return loss_record, bm_error_validation, bm_error_train
 
 
 def run_adjusted_loss_baseline_experiment(
@@ -727,7 +703,7 @@ def run_adjusted_loss_baseline_experiment(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
-        seed=run_id
+        seed=run_id,
     )
 
     train_dataset_transitions = generate_transitions_observations(
@@ -763,12 +739,13 @@ def run_adjusted_loss_baseline_experiment(
         epsilon,
         batch_size,
         train_max_iterations,
-        logger,
+        frequency_scaling=False,
+        logger=logger,
     )
 
     # Initialize and train network with original loss
     qnet_adjusted_loss = QNET(input_size, output_size)
-    loss_record_random_policy_adjusted = train_net_with_neural_fitted_q_scaled_loss(
+    loss_record_random_policy_adjusted = train_net_with_neural_fitted_q(
         qnet_adjusted_loss,
         train_dataset_transitions,
         Q_pi_random,
@@ -778,7 +755,8 @@ def run_adjusted_loss_baseline_experiment(
         epsilon,
         batch_size,
         train_max_iterations,
-        logger,
+        frequency_scaling=True,
+        logger=logger,
     )
 
     bm_error = compute_validation_bellmans_error(
@@ -840,7 +818,7 @@ def generate_train_test_split_with_valid_path(
     found_valid_path = False
     attempts = 0
     max_attempts = 100
-    
+
     if not seed:
         seed = np.random.randint(0, 10000)
 
