@@ -8,7 +8,7 @@ rows: 10
 cols: 10
 p_success: 1
 num_steps: 40_000
-train_max_iterations: 20
+train_max_iterations: 40
 
 # Learning hyperparameters
 alpha: 0.1  # Learning rate

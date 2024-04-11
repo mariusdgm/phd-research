@@ -32,8 +32,6 @@ def run(opts: Namespace) -> None:
         # Use PyYAML to write the dictionary to a YAML file
         yaml.dump(opts_dict, f)
 
-    seed_everything(opts.seed)
-
     logger.info(
         f"Starting experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
@@ -41,6 +39,7 @@ def run(opts: Namespace) -> None:
     loss_record, bm_error = run_baseline_random_policy_experiment(
         tau=opts.tau,
         seed=opts.seed,
+        run_id=opts.run_id,
         rows=opts.rows,
         cols=opts.cols,
         start_state=opts.start_state,

@@ -432,6 +432,7 @@ def run_sampling_regret_experiment(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
+        seed=run_id
     )
     sampled_transitions_train = generate_transitions_observations(
         transitions_train,
@@ -551,6 +552,7 @@ def train_net_with_value_function_approximation(
 def run_sampling_regret_experiment_with_policy_evaluation(
     tau,
     seed,
+    run_id,
     rows,
     cols,
     start_state,
@@ -568,7 +570,8 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    env = make_env(rows, cols, start_state, p_success, terminal_states, seed)
+    seed_everything(run_id)
+    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -579,6 +582,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
+        seed=run_id
     )
 
     sampled_transitions_train = generate_transitions_observations(
@@ -593,6 +597,8 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     output_size = len(actions)
 
     # Initialize the DQN
+    seed_everything(seed)
+
     net_random_policy = QNET(input_size, output_size)
 
     loss_record_random_policy = train_net_with_value_function_approximation(
@@ -620,6 +626,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
 def run_baseline_random_policy_experiment(
     tau,
     seed,
+    run_id,
     rows,
     cols,
     start_state,
@@ -633,12 +640,12 @@ def run_baseline_random_policy_experiment(
     train_max_iterations,
     logger=None,
 ):
-    np.random.seed(seed)
 
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    env = make_env(rows, cols, start_state, p_success, terminal_states, seed)
+    seed_everything(run_id)
+    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -649,11 +656,14 @@ def run_baseline_random_policy_experiment(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
+        seed=run_id
     )
 
     random_policy_transitions = generate_random_policy_transitions(
         transitions_train, num_steps, env, actions, seed, logger
     )
+
+    seed_everything(seed)
 
     ### Training
     input_size = len(states[0])  # Or another way to represent the size of your input
@@ -687,6 +697,7 @@ def run_baseline_random_policy_experiment(
 def run_adjusted_loss_baseline_experiment(
     tau,
     seed,
+    run_id,
     rows,
     cols,
     start_state,
@@ -700,12 +711,12 @@ def run_adjusted_loss_baseline_experiment(
     train_max_iterations,
     logger=None,
 ):
-    np.random.seed(seed)
 
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    env = make_env(rows, cols, start_state, p_success, terminal_states, seed)
+    seed_everything(run_id)
+    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -716,6 +727,7 @@ def run_adjusted_loss_baseline_experiment(
         transitions_list=transitions_list,
         start_state=start_state,
         terminal_states=terminal_states,
+        seed=run_id
     )
 
     train_dataset_transitions = generate_transitions_observations(
@@ -725,6 +737,7 @@ def run_adjusted_loss_baseline_experiment(
     #     transitions_train, num_steps, env, actions, seed, logger
     # )
 
+    seed_everything(seed)
     ### Training
     input_size = len(states[0])  # Or another way to represent the size of your input
     output_size = len(actions)
@@ -821,16 +834,19 @@ def check_path_existence_to_any_terminal(G, start_state, terminal_states):
 
 
 def generate_train_test_split_with_valid_path(
-    transitions_list, start_state, terminal_states
+    transitions_list, start_state, terminal_states, seed=None
 ):
     transitions_train, transitions_val = [], []
     found_valid_path = False
     attempts = 0
     max_attempts = 100
+    
+    if not seed:
+        seed = np.random.randint(0, 10000)
 
     while not found_valid_path and attempts < max_attempts:
         transitions_train, transitions_val = train_test_split(
-            transitions_list, test_size=0.2, random_state=np.random.randint(0, 10000)
+            transitions_list, test_size=0.2, random_state=seed
         )
         G = build_graph_with_networkx(transitions_train, start_state, terminal_states)
         if check_path_existence_to_any_terminal(G, start_state, terminal_states):
