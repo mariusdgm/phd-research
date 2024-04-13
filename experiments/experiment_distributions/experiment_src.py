@@ -218,7 +218,8 @@ def train_net_with_neural_fitted_q(
         dataset = TransitionDataset(transitions)
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    # optimizer = optim.Adam(net.parameters(), lr=0.001)
+    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
     loss_record = []
 
     for epoch in range(max_iterations):
@@ -481,7 +482,8 @@ def train_net_with_value_function_approximation(
     net.train()
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    # optimizer = optim.Adam(net.parameters(), lr=0.001)
+    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
     loss_fn = nn.MSELoss()
     loss_record = []
 
