@@ -62,7 +62,7 @@ def run(opts: Namespace) -> None:
     for model_key, loss_record in loss_records.items():
         # Create a DataFrame for the current model's loss record
         df_temp = pd.DataFrame(
-            loss_record, columns=["epoch", "total_loss", "expected_value"]
+            loss_record, columns=["epoch", "total_loss"]
         )
         df_temp["model"] = model_key  # Dynamically set the model name based on the key
         df_loss_list.append(df_temp)

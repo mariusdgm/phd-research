@@ -219,7 +219,7 @@ def train_net_with_neural_fitted_q(
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     # optimizer = optim.Adam(net.parameters(), lr=0.001)
-    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     loss_record = []
 
     for epoch in range(max_iterations):
@@ -403,13 +403,12 @@ def run_sampling_regret_experiment(
     ### Training
     input_size = len(states[0])  # Or another way to represent the size of your input
     output_size = len(actions)
-
     seed_everything(seed)
+    
     # Initialize the DQN
-    dqn = QNET(input_size, output_size)
-
+    qnet = QNET(input_size, output_size)
     loss_record = train_net_with_neural_fitted_q(
-        dqn,
+        qnet,
         sampled_transitions_train,
         Q_pi_random,
         states,
@@ -423,19 +422,17 @@ def run_sampling_regret_experiment(
     )
 
     bm_error_validation = compute_validation_bellmans_error(
-        dqn, validation_transitions=transitions_val, error_mode="max", gamma=gamma
+        qnet, validation_transitions=transitions_val, error_mode="max", gamma=gamma
     )
 
     bm_error_train = compute_validation_bellmans_error(
-        dqn, validation_transitions=transitions_train, error_mode="max", gamma=gamma
+        qnet, validation_transitions=transitions_train, error_mode="max", gamma=gamma
     )
 
     return loss_record, bm_error_validation, bm_error_train
 
 
-def generate_random_policy_transitions(
-    transitions_list, num_steps, env, actions
-):
+def generate_random_policy_transitions(transitions_list, num_steps, env, actions):
     transitions = []
 
     # Convert transitions_train to a set with float rewards for efficient lookup
@@ -483,7 +480,7 @@ def train_net_with_value_function_approximation(
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     # optimizer = optim.Adam(net.parameters(), lr=0.001)
-    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     loss_fn = nn.MSELoss()
     loss_record = []
 
@@ -698,6 +695,12 @@ def run_adjusted_loss_baseline_experiment(
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
+    random_policy = create_random_policy(states, actions)
+
+    Q = {state: {action: 0 for action in actions} for state in states}
+    Q_pi_random = random_policy_evaluation_q_stochastic(
+        states, actions, random_policy, Q, env.mdp, gamma, epsilon
+    )
 
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
 
@@ -709,25 +712,19 @@ def run_adjusted_loss_baseline_experiment(
     )
 
     train_dataset_transitions = generate_transitions_observations(
-        transitions_train, num_steps, tau, min_samples=min_samples
+        transitions_train, 
+        num_steps, 
+        tau=tau, 
+        min_samples=min_samples
     )
     # train_dataset_transitions = generate_random_policy_transitions(
     #     transitions_train, num_steps, env, actions, seed, logger
     # )
 
-    seed_everything(seed)
     ### Training
     input_size = len(states[0])  # Or another way to represent the size of your input
     output_size = len(actions)
-
-    states = list(set([s for s, _ in env.mdp.keys()]))
-    actions = list(set([a for _, a in env.mdp.keys()]))
-    random_policy = create_random_policy(states, actions)
-
-    Q = {state: {action: 0 for action in actions} for state in states}
-    Q_pi_random = random_policy_evaluation_q_stochastic(
-        states, actions, random_policy, Q, env.mdp, gamma, epsilon
-    )
+    seed_everything(seed)
 
     # Initialize and train network with original loss
     qnet = QNET(input_size, output_size)
@@ -740,7 +737,7 @@ def run_adjusted_loss_baseline_experiment(
         gamma,
         epsilon,
         batch_size,
-        train_max_iterations,
+        max_iterations=train_max_iterations,
         frequency_scaling=False,
         logger=logger,
     )
@@ -756,7 +753,7 @@ def run_adjusted_loss_baseline_experiment(
         gamma,
         epsilon,
         batch_size,
-        train_max_iterations,
+        max_iterations=train_max_iterations,
         frequency_scaling=True,
         logger=logger,
     )
