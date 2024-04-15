@@ -60,7 +60,7 @@ def run(opts: Namespace) -> None:
 
     # Convert results to DataFrame (if not already in a suitable format)
     df_loss = pd.DataFrame(
-        loss_record, columns=["epoch", "total_loss"]
+        loss_record, columns=["epoch", "total_loss", "scheduler_lr"]
     )
 
     # Saving the loss record to a CSV file

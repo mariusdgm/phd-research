@@ -23,6 +23,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
+from torch.optim.lr_scheduler import LinearLR
 from collections import Counter
 
 import networkx as nx
@@ -219,7 +220,9 @@ def train_net_with_neural_fitted_q(
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     # optimizer = optim.Adam(net.parameters(), lr=0.001)
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(net.parameters(), lr=0.0001, momentum=0.9)
+    scheduler = LinearLR(optimizer, start_factor=1, end_factor=0, total_iters=max_iterations)
+
     loss_record = []
 
     for epoch in range(max_iterations):
@@ -243,7 +246,10 @@ def train_net_with_neural_fitted_q(
             optimizer.step()
             total_loss += loss.item()
 
-        loss_record.append((epoch, total_loss))
+        scheduler.step()
+        
+        current_lr = scheduler.get_last_lr()[0]
+        loss_record.append((epoch, total_loss, current_lr))
 
     return loss_record
 
@@ -480,7 +486,9 @@ def train_net_with_value_function_approximation(
     dataset = TransitionDataset(transitions)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     # optimizer = optim.Adam(net.parameters(), lr=0.001)
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(net.parameters(), lr=0.0001, momentum=0.9)
+    scheduler = LinearLR(optimizer, start_factor=1, end_factor=0, total_iters=max_iterations)
+    
     loss_fn = nn.MSELoss()
     loss_record = []
 
@@ -502,8 +510,10 @@ def train_net_with_value_function_approximation(
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-
-        loss_record.append((epoch, total_loss, 0))
+        
+        scheduler.step()
+        current_lr = scheduler.get_last_lr()[0]
+        loss_record.append((epoch, total_loss, current_lr))
 
         logger.info(f"Epoch {epoch + 1}, Total Loss: {total_loss}")
 
