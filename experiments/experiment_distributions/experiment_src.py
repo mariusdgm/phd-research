@@ -297,8 +297,11 @@ def get_frequency_scaling(transitions):
 
 
 def compute_validation_bellmans_error(
-    model, validation_transitions, error_mode, gamma=0.99
+    model, validation_transitions, error_mode, gamma=0.99, logger=None
 ):
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
     model.eval()  # Set the DQN to evaluation mode
 
     with torch.no_grad():
@@ -327,7 +330,13 @@ def compute_validation_bellmans_error(
             gamma=gamma,
         )
 
-    return bellmans_error.mean().item()
+    result = bellmans_error.mean().item()
+    if result == float("inf") or result == -float("inf") or np.isnan(result):
+        logger.error(
+            f"Invalid Bellman error: {result} Bellman error array {bellmans_error}. Data used: {validation_transitions}"
+        )
+
+    return result
 
 
 def bellman_error(
@@ -453,11 +462,19 @@ def run_sampling_regret_experiment(
     )
 
     bm_error_validation = compute_validation_bellmans_error(
-        qnet, validation_transitions=transitions_val, error_mode="max", gamma=gamma
+        qnet,
+        validation_transitions=transitions_val,
+        error_mode="max",
+        gamma=gamma,
+        logger=logger,
     )
 
     bm_error_train = compute_validation_bellmans_error(
-        qnet, validation_transitions=transitions_train, error_mode="max", gamma=gamma
+        qnet,
+        validation_transitions=transitions_train,
+        error_mode="max",
+        gamma=gamma,
+        logger=logger,
     )
 
     return loss_record, bm_error_validation, bm_error_train
@@ -563,6 +580,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         validation_transitions=transitions_val,
         error_mode="mean",
         gamma=gamma,
+        logger=logger,
     )
 
     return loss_record_random_policy, bm_error
@@ -642,6 +660,7 @@ def run_baseline_random_policy_experiment(
         validation_transitions=transitions_val,
         error_mode="max",
         gamma=gamma,
+        logger=logger,
     )
 
     bm_error_train = compute_validation_bellmans_error(
@@ -649,6 +668,7 @@ def run_baseline_random_policy_experiment(
         validation_transitions=transitions_train,
         error_mode="max",
         gamma=gamma,
+        logger=logger,
     )
 
     return loss_record, bm_error_validation, bm_error_train
@@ -751,6 +771,7 @@ def run_adjusted_loss_baseline_experiment(
         validation_transitions=transitions_val,
         error_mode="max",
         gamma=gamma,
+        logger=logger,
     )
 
     loss = {
@@ -764,10 +785,8 @@ def run_adjusted_loss_baseline_experiment(
 
 
 def build_graph_with_networkx(transitions, start_state, terminal_states):
-    G = nx.DiGraph()  # Directed graph
-    # Explicitly add the start state as a node
+    G = nx.DiGraph() 
     G.add_node(start_state)
-    # Also add each terminal state as a node
     for terminal_state in terminal_states.keys():
         G.add_node(terminal_state)
     for current_state, action, next_state, reward, done, prob in transitions:
@@ -800,23 +819,27 @@ def generate_train_test_split_with_valid_path(
     transitions_train, transitions_val = [], []
     found_valid_path = False
     attempts = 0
-    max_attempts = 100
+    max_attempts = 1000
 
-    if not seed:
-        seed = np.random.randint(0, 10000)
+    # Create a random number generator with the provided seed
+    rng = np.random.default_rng(seed)
 
     while not found_valid_path and attempts < max_attempts:
+        # Generate a new seed for each split attempt
+        split_seed = rng.integers(low=0, high=10000)
+
         transitions_train, transitions_val = train_test_split(
-            transitions_list, test_size=0.2, random_state=seed
+            transitions_list, test_size=0.2, random_state=split_seed
         )
         G = build_graph_with_networkx(transitions_train, start_state, terminal_states)
         if check_path_existence_to_any_terminal(G, start_state, terminal_states):
             found_valid_path = True
-        attempts += 1
+        else:
+            attempts += 1  # Increment the attempt counter
 
     if not found_valid_path:
         raise ValueError(
-            "Could not find a valid path to any terminal state. Check setup."
+            "Could not find a valid path to any terminal state after {} attempts. Check setup.".format(max_attempts)
         )
 
     return transitions_train, transitions_val
