@@ -194,7 +194,7 @@ class TransitionDataset(Dataset):
         )
 
 
-def train_net_with_neural_fitted_q(
+def train_net_with_neural_fitting(
     net,
     transitions,
     Q_pi_random,
@@ -205,8 +205,30 @@ def train_net_with_neural_fitted_q(
     batch_size,
     max_iterations,
     frequency_scaling=False,
+    mode="max",
     logger=None,
 ):
+    """
+    Trains a neural network using the Neural Fitting algorithm.
+
+    Args:
+        net (torch.nn.Module): The neural network to be trained.
+        transitions (list): A list of transition tuples (s, a, r, s').
+        Q_pi_random (torch.Tensor): A tensor containing random Q-values for the given policy.
+        states (list): A list of states.
+        actions (list): A list of actions.
+        gamma (float): The discount factor.
+        epsilon (float): The exploration rate.
+        batch_size (int): The batch size for training.
+        max_iterations (int): The maximum number of training iterations.
+        frequency_scaling (bool, optional): Whether to use frequency scaling. Defaults to False.
+        mode (str, optional): The mode of the Bellman equation. Defaults to "max". Can be "max" or "mean".
+        logger (logging.Logger, optional): The logger for logging training information. Defaults to None.
+
+    Returns:
+        list: A list of tuples containing the epoch number, total loss, and current learning rate.
+    """
+
     if logger is None:
         logger = logging.getLogger(__name__)
 
@@ -221,7 +243,9 @@ def train_net_with_neural_fitted_q(
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     # optimizer = optim.Adam(net.parameters(), lr=0.001)
     optimizer = optim.SGD(net.parameters(), lr=0.0001, momentum=0.9)
-    scheduler = LinearLR(optimizer, start_factor=1, end_factor=0, total_iters=max_iterations)
+    scheduler = LinearLR(
+        optimizer, start_factor=1, end_factor=0, total_iters=max_iterations
+    )
 
     loss_record = []
 
@@ -231,7 +255,7 @@ def train_net_with_neural_fitted_q(
             optimizer.zero_grad()
 
             bellmans_errors = bellman_error(
-                net, state, action, next_state, reward, done, mode="max", gamma=gamma
+                net, state, action, next_state, reward, done, mode=mode, gamma=gamma
             )
             net.train()
 
@@ -247,7 +271,7 @@ def train_net_with_neural_fitted_q(
             total_loss += loss.item()
 
         scheduler.step()
-        
+
         current_lr = scheduler.get_last_lr()[0]
         loss_record.append((epoch, total_loss, current_lr))
 
@@ -410,10 +434,10 @@ def run_sampling_regret_experiment(
     input_size = len(states[0])  # Or another way to represent the size of your input
     output_size = len(actions)
     seed_everything(seed)
-    
+
     # Initialize the DQN
     qnet = QNET(input_size, output_size)
-    loss_record = train_net_with_neural_fitted_q(
+    loss_record = train_net_with_neural_fitting(
         qnet,
         sampled_transitions_train,
         Q_pi_random,
@@ -424,6 +448,7 @@ def run_sampling_regret_experiment(
         batch_size=batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=False,
+        mode="max",
         logger=logger,
     )
 
@@ -466,58 +491,6 @@ def generate_random_policy_transitions(transitions_list, num_steps, env, actions
                 break
 
     return transitions
-
-
-def train_net_with_value_function_approximation(
-    net,
-    transitions,
-    states,
-    actions,
-    gamma,
-    epsilon,
-    batch_size,
-    max_iterations,
-    logger=None,
-):
-    if logger is None:
-        logger = logging.getLogger(__name__)
-
-    net.train()
-    dataset = TransitionDataset(transitions)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    # optimizer = optim.Adam(net.parameters(), lr=0.001)
-    optimizer = optim.SGD(net.parameters(), lr=0.0001, momentum=0.9)
-    scheduler = LinearLR(optimizer, start_factor=1, end_factor=0, total_iters=max_iterations)
-    
-    loss_fn = nn.MSELoss()
-    loss_record = []
-
-    for epoch in range(max_iterations):
-        total_loss = 0
-        for state, action, next_state, reward, done in dataloader:
-            optimizer.zero_grad()
-            q_values = net(state)
-
-            next_q_values = net(next_state)
-            # Compute expected Q-value for the next state using uniform random policy
-            expected_next_q_values = next_q_values.detach().mean(dim=1)
-            target_q_values = torch.zeros_like(q_values)
-
-            updates = reward + gamma * expected_next_q_values * (~done)
-            target_q_values[torch.arange(len(action)), action.long()] = updates
-
-            loss = loss_fn(q_values, target_q_values)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-        
-        scheduler.step()
-        current_lr = scheduler.get_last_lr()[0]
-        loss_record.append((epoch, total_loss, current_lr))
-
-        logger.info(f"Epoch {epoch + 1}, Total Loss: {total_loss}")
-
-    return loss_record
 
 
 def run_sampling_regret_experiment_with_policy_evaluation(
@@ -572,7 +545,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
 
     net_random_policy = QNET(input_size, output_size)
 
-    loss_record_random_policy = train_net_with_value_function_approximation(
+    loss_record_random_policy = train_net_with_neural_fitting(
         net_random_policy,
         sampled_transitions_train,
         states,
@@ -581,7 +554,8 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         epsilon,
         batch_size,
         train_max_iterations,
-        logger,
+        mode="mean",
+        logger=logger,
     )
 
     bm_error = compute_validation_bellmans_error(
@@ -648,7 +622,7 @@ def run_baseline_random_policy_experiment(
     # Initialize the DQN
     qnet_random_policy = QNET(input_size, output_size)
 
-    loss_record = train_net_with_neural_fitted_q(
+    loss_record = train_net_with_neural_fitting(
         qnet_random_policy,
         random_policy_transitions,
         Q_pi_random,
@@ -659,6 +633,7 @@ def run_baseline_random_policy_experiment(
         batch_size=batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=False,
+        mode="max",
         logger=logger,
     )
 
@@ -722,10 +697,7 @@ def run_adjusted_loss_baseline_experiment(
     )
 
     train_dataset_transitions = generate_transitions_observations(
-        transitions_train, 
-        num_steps, 
-        tau=tau, 
-        min_samples=min_samples
+        transitions_train, num_steps, tau=tau, min_samples=min_samples
     )
     # train_dataset_transitions = generate_random_policy_transitions(
     #     transitions_train, num_steps, env, actions, seed, logger
@@ -738,7 +710,7 @@ def run_adjusted_loss_baseline_experiment(
 
     # Initialize and train network with original loss
     qnet = QNET(input_size, output_size)
-    loss_record_random_policy = train_net_with_neural_fitted_q(
+    loss_record_random_policy = train_net_with_neural_fitting(
         qnet,
         train_dataset_transitions,
         Q_pi_random,
@@ -749,12 +721,13 @@ def run_adjusted_loss_baseline_experiment(
         batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=False,
+        mode="max",
         logger=logger,
     )
 
     # Initialize and train network with original loss
     qnet_adjusted_loss = QNET(input_size, output_size)
-    loss_record_random_policy_adjusted = train_net_with_neural_fitted_q(
+    loss_record_random_policy_adjusted = train_net_with_neural_fitting(
         qnet_adjusted_loss,
         train_dataset_transitions,
         Q_pi_random,
@@ -765,6 +738,7 @@ def run_adjusted_loss_baseline_experiment(
         batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=True,
+        mode="max",
         logger=logger,
     )
 
