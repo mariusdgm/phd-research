@@ -241,11 +241,11 @@ def train_net_with_neural_fitting(
         dataset = TransitionDataset(transitions)
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    # optimizer = optim.Adam(net.parameters(), lr=0.001)
-    optimizer = optim.SGD(net.parameters(), lr=0.0001, momentum=0.9)
-    scheduler = LinearLR(
-        optimizer, start_factor=1, end_factor=0, total_iters=max_iterations
-    )
+    optimizer = optim.Adam(net.parameters(), lr=0.001)
+    # optimizer = optim.SGD(net.parameters(), lr=0.0001, momentum=0.9)
+    # scheduler = LinearLR(
+    #     optimizer, start_factor=1, end_factor=0, total_iters=max_iterations
+    # )
 
     loss_record = []
 
@@ -270,9 +270,11 @@ def train_net_with_neural_fitting(
             optimizer.step()
             total_loss += loss.item()
 
-        scheduler.step()
+        # scheduler.step()
 
-        current_lr = scheduler.get_last_lr()[0]
+        # current_lr = scheduler.get_last_lr()[0]
+        current_lr = 0
+
         loss_record.append((epoch, total_loss, current_lr))
 
     return loss_record
@@ -295,6 +297,28 @@ def get_frequency_scaling(transitions):
     }
     return inverse_frequency_scaling
 
+def normalize_frequencies(transitions):
+    # Get frequency scaling factors
+    freq_scaling = get_frequency_scaling(transitions)
+
+    # New list to hold the normalized transitions
+    normalized_transitions = []
+
+    # Maximum times any transition needs to be repeated to achieve uniformity
+    max_repeats = int(max(freq_scaling.values()))
+
+    for transition in transitions:
+        key = tuple(transition[:-1])  # Create a key similar to what get_frequency_scaling uses
+        # Calculate how many times this transition should appear
+        # We scale the factor up by the max to ensure integer repetitions
+        num_repeats = int(round(freq_scaling[key] * max_repeats))
+        normalized_transitions.extend([transition] * num_repeats)
+
+    # Shuffle to simulate random sampling if order does not matter
+    np.random.shuffle(normalized_transitions)
+
+    # If needed, truncate to the original list size
+    return normalized_transitions[:len(transitions)]
 
 def compute_validation_bellmans_error(
     model, validation_transitions, error_mode, gamma=0.99, logger=None
@@ -409,6 +433,7 @@ def run_sampling_regret_experiment(
     min_samples,
     batch_size,
     train_max_iterations,
+    neural_fit_mode,
     logger=None,
 ):
     if logger is None:
@@ -457,14 +482,14 @@ def run_sampling_regret_experiment(
         batch_size=batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=False,
-        mode="max",
+        mode=neural_fit_mode,
         logger=logger,
     )
 
     bm_error_validation = compute_validation_bellmans_error(
         qnet,
         validation_transitions=transitions_val,
-        error_mode="max",
+        error_mode=neural_fit_mode,
         gamma=gamma,
         logger=logger,
     )
@@ -472,7 +497,7 @@ def run_sampling_regret_experiment(
     bm_error_train = compute_validation_bellmans_error(
         qnet,
         validation_transitions=transitions_train,
-        error_mode="max",
+        error_mode=neural_fit_mode,
         gamma=gamma,
         logger=logger,
     )
@@ -761,7 +786,24 @@ def run_adjusted_loss_baseline_experiment(
         mode="max",
         logger=logger,
     )
-
+    
+    normalized_transitions_train = normalize_frequencies(train_dataset_transitions)
+    qnet_dataset_normed = QNET(input_size, output_size)
+    loss_record_dataset_normed = train_net_with_neural_fitting(
+        qnet,
+        normalized_transitions_train,
+        Q_pi_random,
+        states,
+        actions,
+        gamma,
+        epsilon,
+        batch_size,
+        max_iterations=train_max_iterations,
+        frequency_scaling=False,
+        mode="max",
+        logger=logger,
+    )
+    
     bm_error = compute_validation_bellmans_error(
         qnet, validation_transitions=transitions_val, error_mode="max", gamma=gamma
     )
@@ -773,19 +815,31 @@ def run_adjusted_loss_baseline_experiment(
         gamma=gamma,
         logger=logger,
     )
+    
+    bm_dataset_normed = compute_validation_bellmans_error(
+        qnet_dataset_normed,
+        validation_transitions=transitions_val,
+        error_mode="max",
+        gamma=gamma,
+        logger=logger,
+    )
 
     loss = {
         "qnet_original": loss_record_random_policy,
         "qnet_adjusted_loss": loss_record_random_policy_adjusted,
+        "qnet_dataset_normed": loss_record_dataset_normed,
     }
 
-    bm_error = {"qnet_original": bm_error, "qnet_adjusted_loss": bm_error_adjusted}
+    bm_error = {"qnet_original": bm_error, 
+                "qnet_adjusted_loss": bm_error_adjusted,
+                "qnet_dataset_normed": bm_dataset_normed
+                }
 
     return loss, bm_error
 
 
 def build_graph_with_networkx(transitions, start_state, terminal_states):
-    G = nx.DiGraph() 
+    G = nx.DiGraph()
     G.add_node(start_state)
     for terminal_state in terminal_states.keys():
         G.add_node(terminal_state)
@@ -839,7 +893,9 @@ def generate_train_test_split_with_valid_path(
 
     if not found_valid_path:
         raise ValueError(
-            "Could not find a valid path to any terminal state after {} attempts. Check setup.".format(max_attempts)
+            "Could not find a valid path to any terminal state after {} attempts. Check setup.".format(
+                max_attempts
+            )
         )
 
     return transitions_train, transitions_val

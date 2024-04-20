@@ -51,6 +51,7 @@ def run(opts: Namespace) -> None:
         batch_size=opts.batch_size,
         min_samples=opts.min_samples,
         train_max_iterations=opts.train_max_iterations,
+        neural_fit_mode=opts.neural_fit_mode,
         logger=logger,
     )
 
