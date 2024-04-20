@@ -298,27 +298,30 @@ def get_frequency_scaling(transitions):
     return inverse_frequency_scaling
 
 def normalize_frequencies(transitions):
-    # Get frequency scaling factors
-    freq_scaling = get_frequency_scaling(transitions)
-
-    # New list to hold the normalized transitions
+    unique_transitions = list(set(transitions))
+    total_size = len(transitions)
+    num_unique = len(unique_transitions)
+    
+    # Calculate the ideal uniform count for each transition
+    ideal_count = total_size // num_unique
+    
+    # Fill the dataset up to the ideal count
     normalized_transitions = []
-
-    # Maximum times any transition needs to be repeated to achieve uniformity
-    max_repeats = int(max(freq_scaling.values()))
-
-    for transition in transitions:
-        key = tuple(transition[:-1])  # Create a key similar to what get_frequency_scaling uses
-        # Calculate how many times this transition should appear
-        # We scale the factor up by the max to ensure integer repetitions
-        num_repeats = int(round(freq_scaling[key] * max_repeats))
-        normalized_transitions.extend([transition] * num_repeats)
-
-    # Shuffle to simulate random sampling if order does not matter
+    for transition in unique_transitions:
+        normalized_transitions.extend([transition] * ideal_count)
+    
+    # Calculate remaining space in the dataset
+    remaining_space = total_size - len(normalized_transitions)
+    
+    # Fill the remaining space by uniform sampling
+    if remaining_space > 0:
+        additional_transitions = np.random.choice(unique_transitions, size=remaining_space, replace=True)
+        normalized_transitions.extend(additional_transitions)
+    
+    # Shuffle the dataset to randomize the order
     np.random.shuffle(normalized_transitions)
-
-    # If needed, truncate to the original list size
-    return normalized_transitions[:len(transitions)]
+    
+    return normalized_transitions
 
 def compute_validation_bellmans_error(
     model, validation_transitions, error_mode, gamma=0.99, logger=None
