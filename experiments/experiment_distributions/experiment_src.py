@@ -315,7 +315,8 @@ def normalize_frequencies(transitions):
     
     # Fill the remaining space by uniform sampling
     if remaining_space > 0:
-        additional_transitions = np.random.choice(unique_transitions, size=remaining_space, replace=True)
+        indices = np.random.choice(len(unique_transitions), size=remaining_space, replace=True)
+        additional_transitions = [unique_transitions[i] for i in indices]
         normalized_transitions.extend(additional_transitions)
     
     # Shuffle the dataset to randomize the order
@@ -464,7 +465,7 @@ def run_sampling_regret_experiment(
         transitions_train,
         num_steps,
         tau=tau,
-        min_samples=min_samples,
+        min_samples=min_samples
     )
 
     ### Training
@@ -578,7 +579,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         transitions_train,
         num_steps,
         tau=tau,
-        min_samples=min_samples,
+        min_samples=min_samples
     )
 
     ### Training
@@ -629,6 +630,7 @@ def run_baseline_random_policy_experiment(
     min_samples,
     batch_size,
     train_max_iterations,
+    neural_fit_mode,
     logger=None,
 ):
 
@@ -679,14 +681,14 @@ def run_baseline_random_policy_experiment(
         batch_size=batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=False,
-        mode="max",
+        mode=neural_fit_mode,
         logger=logger,
     )
 
     bm_error_validation = compute_validation_bellmans_error(
         qnet_random_policy,
         validation_transitions=transitions_val,
-        error_mode="max",
+        error_mode=neural_fit_mode,
         gamma=gamma,
         logger=logger,
     )
@@ -694,7 +696,7 @@ def run_baseline_random_policy_experiment(
     bm_error_train = compute_validation_bellmans_error(
         qnet_random_policy,
         validation_transitions=transitions_train,
-        error_mode="max",
+        error_mode=neural_fit_mode,
         gamma=gamma,
         logger=logger,
     )
@@ -717,6 +719,7 @@ def run_adjusted_loss_baseline_experiment(
     min_samples,
     batch_size,
     train_max_iterations,
+    neural_fit_mode,
     logger=None,
 ):
 
@@ -769,7 +772,7 @@ def run_adjusted_loss_baseline_experiment(
         batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=False,
-        mode="max",
+        mode=neural_fit_mode,
         logger=logger,
     )
 
@@ -786,7 +789,7 @@ def run_adjusted_loss_baseline_experiment(
         batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=True,
-        mode="max",
+        mode=neural_fit_mode,
         logger=logger,
     )
     
@@ -803,18 +806,18 @@ def run_adjusted_loss_baseline_experiment(
         batch_size,
         max_iterations=train_max_iterations,
         frequency_scaling=False,
-        mode="max",
+        mode=neural_fit_mode,
         logger=logger,
     )
     
     bm_error = compute_validation_bellmans_error(
-        qnet, validation_transitions=transitions_val, error_mode="max", gamma=gamma
+        qnet, validation_transitions=transitions_val, error_mode=neural_fit_mode, gamma=gamma
     )
 
     bm_error_adjusted = compute_validation_bellmans_error(
         qnet_adjusted_loss,
         validation_transitions=transitions_val,
-        error_mode="max",
+        error_mode=neural_fit_mode,
         gamma=gamma,
         logger=logger,
     )
@@ -822,7 +825,7 @@ def run_adjusted_loss_baseline_experiment(
     bm_dataset_normed = compute_validation_bellmans_error(
         qnet_dataset_normed,
         validation_transitions=transitions_val,
-        error_mode="max",
+        error_mode=neural_fit_mode,
         gamma=gamma,
         logger=logger,
     )
