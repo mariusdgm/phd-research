@@ -315,7 +315,7 @@ def normalize_frequencies(transitions):
     
     # Fill the remaining space by uniform sampling
     if remaining_space > 0:
-        indices = np.random.choice(len(unique_transitions), size=remaining_space, replace=True)
+        indices = np.random.choice(len(unique_transitions), size=remaining_space, replace=False)
         additional_transitions = [unique_transitions[i] for i in indices]
         normalized_transitions.extend(additional_transitions)
     
