@@ -10,7 +10,7 @@ from argparse import Namespace
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(root_dir)
 
-from experiment_src import run_sampling_regret_experiment_with_policy_evaluation
+from common.src.distribution_src import run_sampling_regret_experiment_with_policy_evaluation
 from experiments.experiment_utils import (
     setup_logger,
     seed_everything,

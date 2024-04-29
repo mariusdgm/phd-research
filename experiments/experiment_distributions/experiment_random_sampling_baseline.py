@@ -11,7 +11,7 @@ from argparse import Namespace
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(root_dir)
 
-from experiment_src import run_baseline_random_policy_experiment
+from common.src.distribution_src import run_baseline_random_policy_experiment
 from experiments.experiment_utils import (
     setup_logger,
     seed_everything,
