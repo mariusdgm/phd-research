@@ -15,8 +15,8 @@ sns.set_theme()
 from rl_envs_forge.envs.grid_world.grid_world import GridWorld
 from rl_envs_forge.envs.grid_world.grid_world import Action
 
-from overfitting.src.utils import create_random_policy
-from overfitting.src.policy_iteration import random_policy_evaluation_q_stochastic
+from common.src.utils import create_random_policy
+from common.src.policy_iteration import random_policy_evaluation_q_stochastic
 from experiments.experiment_utils import seed_everything
 
 import torch

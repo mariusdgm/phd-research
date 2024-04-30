@@ -14,7 +14,7 @@ from argparse import Namespace
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(root_dir)
 
-from common.src.distribution_src import run_sampling_regret_experiment
+from common.src.dqn.dist_dqn_src import run_sampling_dqn_experiment
 from experiments.experiment_utils import (
     setup_logger,
     convert_from_string,
@@ -40,7 +40,7 @@ def run(opts: Namespace) -> None:
     )
 
     # TODO: implement dqn experiment with parametrization
-    loss_record, bm_error_validation, bm_error_train = run_sampling_regret_experiment(
+    loss_record, bm_error_validation, bm_error_train = run_sampling_dqn_experiment(
         tau=opts.tau,
         seed=opts.seed,
         run_id=opts.run_id,
