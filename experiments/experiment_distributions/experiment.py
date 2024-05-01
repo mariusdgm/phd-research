@@ -12,7 +12,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__fi
 sys.path.append(root_dir)
 
 from common.src.distribution_src import run_sampling_regret_experiment
-from experiments.experiment_utils import (
+from common.src.experiment_utils import (
     setup_logger,
     convert_from_string,
     namespace_to_dict,

@@ -10,18 +10,18 @@ from typing import List, Dict
 
 import torch.optim as optim
 import torch.nn.functional as F
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
 
 import gym
 
-from minatar_dqn.replay_buffer import ReplayBuffer
-from experiments.experiment_utils import seed_everything
-from minatar_dqn.utils.my_logging import setup_logger
-from minatar_dqn.utils.generic import merge_dictionaries, replace_keys
-from minatar_dqn.models import Conv_QNET, Conv_QNET_one
-from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
+from replay_buffer import ReplayBuffer
+from common.src.experiment_utils import seed_everything
+ 
+from utils.generic import merge_dictionaries, replace_keys
+from models import Conv_QNET, Conv_QNET_one
+from minatar_gym_wrappers import PermuteMinatarObsSpace
 
-from minatar_dqn.redo import (
+from redo import (
     apply_redo_parametrization,
     reset_optimizer_states,
     map_layers_to_optimizer_indices,

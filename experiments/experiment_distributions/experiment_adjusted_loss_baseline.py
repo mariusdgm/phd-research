@@ -11,7 +11,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__fi
 sys.path.append(root_dir)
 
 from common.src.distribution_src import run_adjusted_loss_baseline_experiment
-from experiments.experiment_utils import (
+from common.src.experiment_utils import (
     setup_logger,
     seed_everything,
     convert_from_string,

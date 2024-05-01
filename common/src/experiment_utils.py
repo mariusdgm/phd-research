@@ -19,7 +19,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from rl_envs_forge.envs.grid_world.grid_world import GridWorld
-from overfitting.src.utils import extract_V_from_Q, create_random_policy
+# from overfitting.src.utils import extract_V_from_Q, create_random_policy
 
 import random
 import numpy as np
@@ -56,6 +56,26 @@ def setup_logger(name, log_file=None, level=logging.INFO):
         logger.addHandler(file_handler)
 
     return logger
+
+def cleanup_file_handlers(experiment_logger=None):
+    """Cleans up all handlers of experiment_logger logger instance.
+
+    Args:
+        experiment_logger (Logger, optional): If experiment_logger is None, then all loggers will be cleaned up.
+        Defaults to None.
+    """
+    # Get all active loggers
+    if experiment_logger:
+        for handler in experiment_logger.handlers:
+            handler.close()
+            experiment_logger.removeHandler(handler)
+    
+    else:
+        logger = logging.getLogger()
+        for handler in logger.handlers:
+            handler.close()
+            logger.removeHandler(handler)
+        
 
 
 def run_cli_command(command: List[str], cwd: str) -> subprocess.CompletedProcess:

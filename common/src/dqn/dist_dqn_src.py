@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import traceback
 
 sns.set_theme()
 
@@ -28,7 +29,8 @@ from common.src.distribution_src import (
     )
 from common.src.utils import create_random_policy
 from common.src.policy_iteration import random_policy_evaluation_q_stochastic
-from experiments.experiment_utils import seed_everything
+from common.src.experiment_utils import seed_everything, cleanup_file_handlers, namespace_to_dict
+
 
 import torch
 import torch.nn as nn
@@ -38,6 +40,7 @@ from torch.optim.lr_scheduler import LinearLR
 from collections import Counter
 
 import networkx as nx
+import logging
 
 
 def run_sampling_dqn_experiment(
@@ -68,13 +71,7 @@ def run_sampling_dqn_experiment(
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
-    random_policy = create_random_policy(states, actions)
-
-    Q = {state: {action: 0 for action in actions} for state in states}
-    Q_pi_random = random_policy_evaluation_q_stochastic(
-        states, actions, random_policy, Q, env.mdp, gamma, epsilon
-    )
-
+    
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
 
     transitions_train, transitions_val = generate_train_test_split_with_valid_path(
@@ -84,9 +81,9 @@ def run_sampling_dqn_experiment(
         seed=run_id,
     )
 
-    train_dataset_transitions = generate_transitions_observations(
-        transitions_train, num_steps, tau=tau, min_samples=min_samples
-    )
+    # train_dataset_transitions = generate_transitions_observations(
+    #     transitions_train, num_steps, tau=tau, min_samples=min_samples
+    # )
     # train_dataset_transitions = generate_random_policy_transitions(
     #     transitions_train, num_steps, env, actions, seed, logger
     # )
@@ -100,8 +97,7 @@ def run_sampling_dqn_experiment(
     qnet = QNET(input_size, output_size)
     loss_record_random_policy = train_dqn(
         qnet,
-        train_dataset_transitions,
-        Q_pi_random,
+        transitions_train,
         states,
         actions,
         gamma,
@@ -110,32 +106,15 @@ def run_sampling_dqn_experiment(
         max_iterations=train_max_iterations,
         frequency_scaling=False,
         mode=neural_fit_mode,
+        adjusted_loss=False,
         logger=logger,
     )
 
     # Initialize and train network with original loss
     qnet_adjusted_loss = QNET(input_size, output_size)
-    loss_record_random_policy_adjusted = train_dqn_with_adjusted_loss(
+    loss_record_random_policy_adjusted = train_dqn(
         qnet_adjusted_loss,
-        train_dataset_transitions,
-        Q_pi_random,
-        states,
-        actions,
-        gamma,
-        epsilon,
-        batch_size,
-        max_iterations=train_max_iterations,
-        frequency_scaling=True,
-        mode=neural_fit_mode,
-        logger=logger,
-    )
-    
-    normalized_transitions_train = normalize_frequencies(train_dataset_transitions)
-    qnet_dataset_normed = QNET(input_size, output_size)
-    loss_record_dataset_normed = train_net_with_neural_fitting(
-        qnet,
-        normalized_transitions_train,
-        Q_pi_random,
+        transitions_train
         states,
         actions,
         gamma,
@@ -144,6 +123,7 @@ def run_sampling_dqn_experiment(
         max_iterations=train_max_iterations,
         frequency_scaling=False,
         mode=neural_fit_mode,
+        adjusted_loss=True,
         logger=logger,
     )
     
@@ -180,8 +160,52 @@ def run_sampling_dqn_experiment(
 
     return loss, bm_error
 
-def train_dqn_with_adjusted_loss():
-    pass
-
 def train_dqn():
-    pass
+    
+    try:
+        config = namespace_to_dict(opts)
+        seed = int(os.path.basename(config["out_dir"]))
+
+        seed_everything(seed)
+
+        logs_file = os.path.join(config["out_dir"], "experiment_log.log")
+
+        logger.info(f"Starting experiment: {config['full_title']}")
+
+        ### Setup environments ###
+        train_env = env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+        validation_env = env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+
+        ### Setup output and loading paths ###
+
+        experiment_agent = AgentDQN(
+            train_env=train_env,
+            validation_env=validation_env,
+            experiment_output_folder=config["out_dir"],
+            experiment_name=config["experiment"],
+            resume_training_path=None,
+            save_checkpoints=True,
+            logger=logger,
+            config=config,
+            enable_tensorboard_logging=False,
+        )
+
+        experiment_agent.train(train_epochs=config["epochs_to_train"])
+
+        logger.info(
+            f'Finished training experiment: {config["full_title"]}, seed: {config["seed"]}'
+        )
+
+        cleanup_file_handlers(experiment_logger=logger)
+
+        return True
+
+    except Exception as exc:
+        # Capture the stack trace along with the exception message
+        error_info = traceback.format_exc()
+
+        # Log this information using your logger, if it's available
+        logger.error("An error occurred: %s", error_info)
+
+        # Return the error info so it can be collected by the parent process
+        return error_info
