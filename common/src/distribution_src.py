@@ -31,12 +31,12 @@ import networkx as nx
 import logging
 
 
-def make_env(rows, cols, start_state, p_success, terminal_states, seed):
+def make_env(rows, cols, start_state, p_success, terminal_states, seed, walls=None):
     return GridWorld(
         rows=rows,
         cols=cols,
         start_state=start_state,
-        walls=None,
+        walls=walls,
         p_success=p_success,
         terminal_states=terminal_states,
         seed=seed,
