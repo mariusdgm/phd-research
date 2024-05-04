@@ -25,6 +25,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.optim.lr_scheduler import LinearLR
 from collections import Counter
+import random
 
 import networkx as nx
 
@@ -47,6 +48,44 @@ def make_env(rows, cols, start_state, p_success, terminal_states, seed, walls=No
             "default": 0.0,
         },
     )
+
+def randomize_walls_positions(rows, columns, starting_cell, terminal_cells, ratio, seed):
+    """Randomly select cells where to place walls in the gridworld.
+    Walls can't be placed in the starting cell or terminal cells.
+    The number of wall cells is determined by the `percentage` parameter.
+    
+    Args:
+        rows (int): Number of rows in the grid.
+        columns (int): Number of columns in the grid.
+        starting_cell (tuple): Coordinates of the starting cell (row, column).
+        terminal_cells (list of tuples): Coordinates of the terminal cells.
+        ratio (float): Ratio of total cells to be converted to walls.
+        seed (int, optional): Seed for the random number generator.
+    Returns:
+        set: Set of tuples where each tuple represents coordinates (row, column) of a wall cell.
+    """
+    if seed is not None:
+        random.seed(seed)
+
+    total_cells = rows * columns
+    wall_count = int(ratio * total_cells)
+
+    # Create a set of all possible cell coordinates
+    all_cells = {(r, c) for r in range(rows) for c in range(columns)}
+    
+    # Remove the starting and terminal cells from possible wall locations
+    forbidden_cells = set(terminal_cells)
+    forbidden_cells.add(starting_cell)
+    available_cells = list(all_cells - forbidden_cells)
+
+    # Adjust the wall_count if necessary
+    if wall_count > len(available_cells):
+        wall_count = len(available_cells)
+
+    # Randomly select wall_count cells to be walls
+    wall_cells = set(random.sample(available_cells, wall_count))
+    
+    return wall_cells
 
 
 def softmax(logits, tau):
