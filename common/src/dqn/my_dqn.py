@@ -14,14 +14,14 @@ import torch.nn.functional as F
 
 import gym
 
-from replay_buffer import ReplayBuffer
+from .replay_buffer import ReplayBuffer
 from common.src.experiment_utils import seed_everything
  
-from utils.generic import merge_dictionaries, replace_keys
-from models import Conv_QNET, Conv_QNET_one
-from minatar_gym_wrappers import PermuteMinatarObsSpace
+from .utils.generic import merge_dictionaries, replace_keys
+from .models import Conv_QNET, Conv_QNET_one
+from .minatar_gym_wrappers import PermuteMinatarObsSpace
 
-from redo import (
+from .redo import (
     apply_redo_parametrization,
     reset_optimizer_states,
     map_layers_to_optimizer_indices,
