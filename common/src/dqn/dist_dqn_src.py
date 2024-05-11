@@ -62,7 +62,7 @@ def run_sampling_dqn_experiment(
     neural_fit_mode,
     dqn_config,
     logger=None,
-)
+):
 
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ def run_sampling_dqn_experiment(
     qnet_adjusted_loss = QNET(input_size, output_size)
     loss_record_random_policy_adjusted = train_dqn(
         qnet_adjusted_loss,
-        transitions_train
+        transitions_train,
         states,
         actions,
         gamma,

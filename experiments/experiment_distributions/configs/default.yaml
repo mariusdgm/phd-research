@@ -9,12 +9,11 @@ cols: 10
 p_success: 1
 num_steps: 40_000
 train_max_iterations: 30
-neural_fit_mode: "mean"
+neural_fit_mode: "max"
 
 # Learning hyperparameters
 alpha: 0.1  # Learning rate
 gamma: 0.9  # Discount factor
-epsilon: 0.01  # Convergence criterion
 batch_size: 32
 
 min_samples: 10

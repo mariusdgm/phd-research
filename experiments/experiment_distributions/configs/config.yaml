@@ -1,4 +1,4 @@
 # parameter variants
 
-
+algorithm: [default, frequency_scaling, dataset_normed]
 tau: [0.001, 0.01, 0.1, 1.0]

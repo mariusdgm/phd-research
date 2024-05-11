@@ -10,13 +10,14 @@ from typing import List, Dict
 
 import torch.optim as optim
 import torch.nn.functional as F
+
 # from tensorboardX import SummaryWriter
 
 import gym
 
 from .replay_buffer import ReplayBuffer
 from common.src.experiment_utils import seed_everything
- 
+
 from .utils.generic import merge_dictionaries, replace_keys
 from .models import Conv_QNET, Conv_QNET_one
 from .minatar_gym_wrappers import PermuteMinatarObsSpace
@@ -33,6 +34,30 @@ from .redo import (
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
+
+
+def state_to_matrix(state, env):
+    import numpy as np
+
+    # Extract the environment size from walls and terminal states
+    max_rows = env.rows
+    max_cols = env.cols
+
+    # Create the matrix
+    matrix = np.zeros((max_rows, max_cols), dtype=int)
+
+    # Mark walls in the matrix
+    for wall in env.walls:
+        matrix[wall[0], wall[1]] = 1  # Use 1 to indicate walls
+
+    # Mark terminal states in the matrix
+    for terminal, value in env.terminal_states.items():
+        matrix[terminal[0], terminal[1]] = 2
+
+    pos = state
+    matrix[pos[0], pos[1]] = 3  # Use 3 to indicate the agent's position
+
+    return matrix
 
 
 class AgentDQN:
@@ -211,7 +236,7 @@ class AgentDQN:
             eps_decay_start=self.replay_start_size,
         )
 
-        self._read_and_init_envs()  # sets up in_features etc...
+        self._read_and_init_envs()
 
         buffer_settings = config.get(
             "replay_buffer", {"max_size": 100_000, "action_dim": 1, "n_step": 0}
@@ -340,19 +365,28 @@ class AgentDQN:
                 self.policy_model.fc[-1].bias.fill_(bias)
                 self.target_model.fc[-1].bias.fill_(bias)
 
+    def _get_observation_space_shape(self, observation_space):
+        """Extract a shape-like tuple from a tuple of discrete spaces."""
+        return tuple(space.n for space in observation_space.spaces)
+
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
         # returns state as [w, h, channels]
-        state_shape = self.train_env.observation_space.shape
+
+        state_shape = self._get_observation_space_shape(
+            self.train_env.observation_space
+        )
 
         # permute to get batch, channel, w, h shape
         # specific to minatar
-        self.in_features = (state_shape[2], state_shape[0], state_shape[1])
+        self.in_features = (1, state_shape[0], state_shape[1])
         self.in_channels = self.in_features[0]
         self.num_actions = self.train_env.action_space.n
 
-        self.train_s, info = self.train_env.reset()
-        self.env_s, info = self.validation_env.reset()
+        self.train_s = self.train_env.reset()
+        self.train_s = state_to_matrix(self.train_s, self.train_env)
+        self.env_s = self.validation_env.reset()
+        self.env_s = state_to_matrix(self.env_s, self.validation_env)
 
     def load_models(self, models_load_file):
         checkpoint = torch.load(models_load_file)
@@ -643,9 +677,11 @@ class AgentDQN:
             epoch_t < train_frames
         ):  # can early stop episode if the frame limit was reached
             action, max_q = self.select_action(self.train_s, self.t, self.num_actions)
+            action = action.flatten().item()
             s_prime, reward, is_terminated, truncated, info = self.train_env.step(
                 action
             )
+            s_prime = state_to_matrix(s_prime, self.train_env)
             s_prime = torch.tensor(s_prime, device=device).float()
 
             self.replay_buffer.append(
@@ -716,7 +752,8 @@ class AgentDQN:
         self.losses = []
         self.max_qs = []
 
-        self.train_s, info = self.train_env.reset()
+        self.train_s = self.train_env.reset()
+        self.train_s = state_to_matrix(self.train_s, self.train_env)
         self.train_s = torch.tensor(self.train_s, device=device).float()
 
     def display_training_epoch_info(self, stats):
@@ -881,7 +918,8 @@ class AgentDQN:
         max_qs = []
 
         # Initialize the environment and start state
-        s, info = self.validation_env.reset()
+        s = self.validation_env.reset()
+        s = state_to_matrix(s, self.validation_env)
         s = torch.tensor(s, device=device).float()
 
         is_terminated = False
@@ -892,6 +930,7 @@ class AgentDQN:
             s_prime, reward, is_terminated, truncated, info = self.validation_env.step(
                 action
             )
+            s_prime = state_to_matrix(s_prime, self.validation_env)
             s_prime = torch.tensor(s_prime, device=device).float()
 
             max_qs.append(max_q)

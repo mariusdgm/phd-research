@@ -7,3 +7,4 @@ class PermuteMinatarObsSpace(gym.ObservationWrapper):
 
     def observation(self, obs):
         return np.transpose(obs, (2, 0, 1))
+    

@@ -5,6 +5,7 @@ sys.path.append(root_dir)
 
 import numpy as np
 from sklearn.model_selection import train_test_split
+import random
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -25,7 +26,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.optim.lr_scheduler import LinearLR
 from collections import Counter
-import random
 
 import networkx as nx
 
@@ -86,7 +86,6 @@ def randomize_walls_positions(rows, columns, starting_cell, terminal_cells, rati
     wall_cells = set(random.sample(available_cells, wall_count))
     
     return wall_cells
-
 
 def softmax(logits, tau):
     logits = np.array(logits)  # Ensure logits is a NumPy array for consistency
@@ -236,11 +235,7 @@ class TransitionDataset(Dataset):
 def train_net_with_neural_fitting(
     net,
     transitions,
-    Q_pi_random,
-    states,
-    actions,
     gamma,
-    epsilon,
     batch_size,
     max_iterations,
     frequency_scaling=False,
@@ -336,32 +331,36 @@ def get_frequency_scaling(transitions):
     }
     return inverse_frequency_scaling
 
+
 def normalize_frequencies(transitions):
     unique_transitions = list(set(transitions))
     total_size = len(transitions)
     num_unique = len(unique_transitions)
-    
+
     # Calculate the ideal uniform count for each transition
     ideal_count = total_size // num_unique
-    
+
     # Fill the dataset up to the ideal count
     normalized_transitions = []
     for transition in unique_transitions:
         normalized_transitions.extend([transition] * ideal_count)
-    
+
     # Calculate remaining space in the dataset
     remaining_space = total_size - len(normalized_transitions)
-    
+
     # Fill the remaining space by uniform sampling
     if remaining_space > 0:
-        indices = np.random.choice(len(unique_transitions), size=remaining_space, replace=False)
+        indices = np.random.choice(
+            len(unique_transitions), size=remaining_space, replace=False
+        )
         additional_transitions = [unique_transitions[i] for i in indices]
         normalized_transitions.extend(additional_transitions)
-    
+
     # Shuffle the dataset to randomize the order
     np.random.shuffle(normalized_transitions)
-    
+
     return normalized_transitions
+
 
 def compute_validation_bellmans_error(
     model, validation_transitions, error_mode, gamma=0.99, logger=None
@@ -501,10 +500,7 @@ def run_sampling_regret_experiment(
         seed=run_id,
     )
     sampled_transitions_train = generate_transitions_observations(
-        transitions_train,
-        num_steps,
-        tau=tau,
-        min_samples=min_samples
+        transitions_train, num_steps, tau=tau, min_samples=min_samples
     )
 
     ### Training
@@ -615,10 +611,7 @@ def run_sampling_regret_experiment_with_policy_evaluation(
     )
 
     sampled_transitions_train = generate_transitions_observations(
-        transitions_train,
-        num_steps,
-        tau=tau,
-        min_samples=min_samples
+        transitions_train, num_steps, tau=tau, min_samples=min_samples
     )
 
     ### Training
@@ -743,7 +736,7 @@ def run_baseline_random_policy_experiment(
     return loss_record, bm_error_validation, bm_error_train
 
 
-def run_adjusted_loss_baseline_experiment(
+def run_distribution_correction_experiment(
     tau,
     seed,
     run_id,
@@ -753,30 +746,31 @@ def run_adjusted_loss_baseline_experiment(
     p_success,
     terminal_states,
     num_steps,
-    epsilon,
     gamma,
     min_samples,
     batch_size,
     train_max_iterations,
     neural_fit_mode,
+    algorithm=None,
     logger=None,
 ):
 
     if logger is None:
         logger = logging.getLogger(__name__)
 
+    if algorithm is None:
+        logger.error("Algorithm must be provided")
+        raise ValueError("Algorithm must be provided")
+
+    if algorithm not in ["default", "adjusted_loss", "dataset_normed"]:
+        logger.error("Algorithm must be default, adjusted_loss, or dataset_normed")
+        raise ValueError("Algorithm must be default, adjusted_loss, or dataset_normed")
+
     seed_everything(run_id)
     env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
-    random_policy = create_random_policy(states, actions)
-
-    Q = {state: {action: 0 for action in actions} for state in states}
-    Q_pi_random = random_policy_evaluation_q_stochastic(
-        states, actions, random_policy, Q, env.mdp, gamma, epsilon
-    )
-
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
 
     transitions_train, transitions_val = generate_train_test_split_with_valid_path(
@@ -789,98 +783,57 @@ def run_adjusted_loss_baseline_experiment(
     train_dataset_transitions = generate_transitions_observations(
         transitions_train, num_steps, tau=tau, min_samples=min_samples
     )
-    # train_dataset_transitions = generate_random_policy_transitions(
-    #     transitions_train, num_steps, env, actions, seed, logger
-    # )
 
-    ### Training
-    input_size = len(states[0])  # Or another way to represent the size of your input
-    output_size = len(actions)
     seed_everything(seed)
-
-    # Initialize and train network with original loss
+    input_size = len(states[0])
+    output_size = len(actions)
     qnet = QNET(input_size, output_size)
-    loss_record_random_policy = train_net_with_neural_fitting(
-        qnet,
-        train_dataset_transitions,
-        Q_pi_random,
-        states,
-        actions,
-        gamma,
-        epsilon,
-        batch_size,
-        max_iterations=train_max_iterations,
-        frequency_scaling=False,
-        mode=neural_fit_mode,
-        logger=logger,
-    )
 
-    # Initialize and train network with original loss
-    qnet_adjusted_loss = QNET(input_size, output_size)
-    loss_record_random_policy_adjusted = train_net_with_neural_fitting(
-        qnet_adjusted_loss,
-        train_dataset_transitions,
-        Q_pi_random,
-        states,
-        actions,
-        gamma,
-        epsilon,
-        batch_size,
-        max_iterations=train_max_iterations,
-        frequency_scaling=True,
-        mode=neural_fit_mode,
-        logger=logger,
-    )
-    
-    normalized_transitions_train = normalize_frequencies(train_dataset_transitions)
-    qnet_dataset_normed = QNET(input_size, output_size)
-    loss_record_dataset_normed = train_net_with_neural_fitting(
-        qnet,
-        normalized_transitions_train,
-        Q_pi_random,
-        states,
-        actions,
-        gamma,
-        epsilon,
-        batch_size,
-        max_iterations=train_max_iterations,
-        frequency_scaling=False,
-        mode=neural_fit_mode,
-        logger=logger,
-    )
-    
+    if algorithm == "default":
+        loss_record = train_net_with_neural_fitting(
+            qnet,
+            train_dataset_transitions,
+            gamma,
+            batch_size,
+            max_iterations=train_max_iterations,
+            frequency_scaling=False,
+            mode=neural_fit_mode,
+            logger=logger,
+        )
+
+    if algorithm == "frequency_scaling":
+        loss_record = train_net_with_neural_fitting(
+            qnet,
+            train_dataset_transitions,
+            gamma,
+            batch_size,
+            max_iterations=train_max_iterations,
+            frequency_scaling=True,
+            mode=neural_fit_mode,
+            logger=logger,
+        )
+
+    if algorithm == "dataset_normed":
+        normalized_transitions_train = normalize_frequencies(train_dataset_transitions)
+        loss_record = train_net_with_neural_fitting(
+            qnet,
+            normalized_transitions_train,
+            gamma,
+            batch_size,
+            max_iterations=train_max_iterations,
+            frequency_scaling=False,
+            mode=neural_fit_mode,
+            logger=logger,
+        )
+
     bm_error = compute_validation_bellmans_error(
-        qnet, validation_transitions=transitions_val, error_mode=neural_fit_mode, gamma=gamma
-    )
-
-    bm_error_adjusted = compute_validation_bellmans_error(
-        qnet_adjusted_loss,
+        qnet,
         validation_transitions=transitions_val,
         error_mode=neural_fit_mode,
         gamma=gamma,
-        logger=logger,
-    )
-    
-    bm_dataset_normed = compute_validation_bellmans_error(
-        qnet_dataset_normed,
-        validation_transitions=transitions_val,
-        error_mode=neural_fit_mode,
-        gamma=gamma,
-        logger=logger,
     )
 
-    loss = {
-        "qnet_original": loss_record_random_policy,
-        "qnet_adjusted_loss": loss_record_random_policy_adjusted,
-        "qnet_dataset_normed": loss_record_dataset_normed,
-    }
-
-    bm_error = {"qnet_original": bm_error, 
-                "qnet_adjusted_loss": bm_error_adjusted,
-                "qnet_dataset_normed": bm_dataset_normed
-                }
-
-    return loss, bm_error
+    return loss_record, bm_error
 
 
 def build_graph_with_networkx(transitions, start_state, terminal_states):
