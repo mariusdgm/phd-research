@@ -897,3 +897,113 @@ def generate_train_test_split_with_valid_path(
         )
 
     return transitions_train, transitions_val
+
+
+def run_dqn_distribution_correction_experiment(
+    tau,
+    seed,
+    run_id,
+    rows,
+    cols,
+    start_state,
+    p_success,
+    terminal_states,
+    num_steps,
+    gamma,
+    min_samples,
+    batch_size,
+    train_max_iterations,
+    neural_fit_mode,
+    algorithm=None,
+    logger=None,
+):
+
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    if algorithm is None:
+        logger.error("Algorithm must be provided")
+        raise ValueError("Algorithm must be provided")
+
+    if algorithm not in ["default", "adjusted_loss", "dataset_normed"]:
+        logger.error("Algorithm must be default, adjusted_loss, or dataset_normed")
+        raise ValueError("Algorithm must be default, adjusted_loss, or dataset_normed")
+
+    seed_everything(run_id)
+    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+
+    states = list(set([s for s, _ in env.mdp.keys()]))
+    actions = list(set([a for _, a in env.mdp.keys()]))
+    transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
+
+ 
+    seed_everything(seed)
+    input_size = len(states[0])
+    output_size = len(actions)
+    
+    # TODO DQN NETWORK class
+    qnet = QNET(input_size, output_size)
+
+    if algorithm == "default":
+        loss_record = train_dqn_network(
+            qnet,
+            env,
+            gamma,
+            batch_size,
+            max_iterations=train_max_iterations,
+            frequency_scaling=False,
+            mode=neural_fit_mode,
+            dataset_normed=False,
+            logger=logger,
+        )
+
+    if algorithm == "frequency_scaling":
+        loss_record = train_dqn_network(
+            qnet,
+            env,
+            gamma,
+            batch_size,
+            max_iterations=train_max_iterations,
+            frequency_scaling=True,
+            mode=neural_fit_mode,
+            dataset_normed=False,
+            logger=logger,
+        )
+
+    if algorithm == "dataset_normed":
+        loss_record = train_dqn_network(
+            qnet,
+            env,
+            gamma,
+            batch_size,
+            max_iterations=train_max_iterations,
+            frequency_scaling=False,
+            mode=neural_fit_mode,
+            dataset_normed=True,
+            logger=logger,
+        )
+
+    bm_error = compute_validation_bellmans_error(
+        qnet,
+        validation_transitions=transitions_list,
+        error_mode=neural_fit_mode,
+        gamma=gamma,
+    )
+
+    return loss_record, bm_error
+
+def train_dqn_network(
+    qnet,
+    env,
+    gamma,
+    batch_size,
+    max_iterations,
+    frequency_scaling,
+    mode,
+    dataset_normed,
+    logger,
+):
+    loss_record = []
+    for i in range(max_iterations):
+        if i % 100 == 0:
+            pass
