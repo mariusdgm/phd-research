@@ -6,6 +6,7 @@ sys.path.append(root_dir)
 import numpy as np
 from sklearn.model_selection import train_test_split
 import random
+import datetime
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -19,6 +20,7 @@ from rl_envs_forge.envs.grid_world.grid_world import Action
 from common.src.utils import create_random_policy
 from common.src.policy_iteration import random_policy_evaluation_q_stochastic
 from common.src.experiment_utils import seed_everything
+from common.src.dqn.replay_buffer import ReplayBuffer
 
 import torch
 import torch.nn as nn
@@ -453,11 +455,6 @@ class QNET(nn.Module):
 
     def forward(self, x):
         return self.network(x)
-
-
-def on_policy_loss(predictions, targets):
-    loss = torch.nn.functional.mse_loss(predictions, targets)
-    return loss
 
 
 def run_sampling_regret_experiment(
@@ -936,17 +933,17 @@ def run_dqn_distribution_correction_experiment(
     actions = list(set([a for _, a in env.mdp.keys()]))
     transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
 
- 
     seed_everything(seed)
     input_size = len(states[0])
     output_size = len(actions)
     
-    # TODO DQN NETWORK class
-    qnet = QNET(input_size, output_size)
+    policy_net = QNET(input_size, output_size)
+    target_net = QNET(input_size, output_size)
 
     if algorithm == "default":
         loss_record = train_dqn_network(
-            qnet,
+            policy_net,
+            target_net,
             env,
             gamma,
             batch_size,
@@ -957,31 +954,31 @@ def run_dqn_distribution_correction_experiment(
             logger=logger,
         )
 
-    if algorithm == "frequency_scaling":
-        loss_record = train_dqn_network(
-            qnet,
-            env,
-            gamma,
-            batch_size,
-            max_iterations=train_max_iterations,
-            frequency_scaling=True,
-            mode=neural_fit_mode,
-            dataset_normed=False,
-            logger=logger,
-        )
+    # if algorithm == "frequency_scaling":
+    #     loss_record = train_dqn_network(
+    #         qnet,
+    #         env,
+    #         gamma,
+    #         batch_size,
+    #         max_iterations=train_max_iterations,
+    #         frequency_scaling=True,
+    #         mode=neural_fit_mode,
+    #         dataset_normed=False,
+    #         logger=logger,
+    #     )
 
-    if algorithm == "dataset_normed":
-        loss_record = train_dqn_network(
-            qnet,
-            env,
-            gamma,
-            batch_size,
-            max_iterations=train_max_iterations,
-            frequency_scaling=False,
-            mode=neural_fit_mode,
-            dataset_normed=True,
-            logger=logger,
-        )
+    # if algorithm == "dataset_normed":
+    #     loss_record = train_dqn_network(
+    #         qnet,
+    #         env,
+    #         gamma,
+    #         batch_size,
+    #         max_iterations=train_max_iterations,
+    #         frequency_scaling=False,
+    #         mode=neural_fit_mode,
+    #         dataset_normed=True,
+    #         logger=logger,
+    #     )
 
     bm_error = compute_validation_bellmans_error(
         qnet,
@@ -1001,9 +998,27 @@ def train_dqn_network(
     frequency_scaling,
     mode,
     dataset_normed,
+    in_features,
+    buffer_settings,
     logger,
 ):
-    loss_record = []
-    for i in range(max_iterations):
-        if i % 100 == 0:
-            pass
+    
+    # make 2 envs
+    
+    # make replay buffer
+    replay_buffer = ReplayBuffer(
+            max_size=buffer_settings.get("max_size"),
+            state_dim=in_features,
+            action_dim=buffer_settings.get("action_dim"),
+            n_step=buffer_settings.get("n_step"),
+        )
+    
+    # 
+    
+    # make 2 networks
+    
+    # epsilon_by_frame = get_linear_decay_function(epsilon_start, epsilon_end, epsilon_decay)
+    
+    
+    pass
+    

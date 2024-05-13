@@ -22,29 +22,22 @@ min_samples: 10
 agent_params:
   agent: AgentDQN
   args_:
-    train_step_cnt: 200_000
+    train_step_cnt: 500
     validation_enabled: True
-    validation_step_cnt: 125_000
+    validation_step_cnt: 250
     validation_epsilon: 0.001
-    replay_start_size: 5_000
+    
+    replay_start_size: 5_0
     
     batch_size: 32
     training_freq: 4
     target_model_update_freq: 4000
     loss_fcn: mse_loss
-
-    gamma: 0.99 
-    
-    epsilon:
-      start: 1.0
-      end: 0.01
-      decay: 250_000
-
-estimator:
-  model: Conv_QNET
-  args_:
-    conv_hidden_out_size: 32
-    lin_hidden_out_size: 128
+ 
+epsilon:
+  start: 1.0
+  end: 0.01
+  decay: 250_000
 
 optim:
   name: Adam
@@ -53,16 +46,6 @@ optim:
     eps: 0.0003125
 
 replay_buffer:
-  max_size: 100_000
+  max_size: 1_000
   action_dim: 1
   n_step: 0
-
-redo:
-  attach: False
-  enabled: False
-  tau: 0.1
-  beta: 1
-  redo_freq: 1_000
-  selection_option: null
-
-reward_perception: null
