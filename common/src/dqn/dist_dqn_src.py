@@ -169,8 +169,6 @@ def train_dqn(config, logger):
 
         seed_everything(seed)
 
-        logs_file = os.path.join(config["out_dir"], "experiment_log.log")
-
         logger.info(f"Starting experiment: {config['full_title']}")
 
         ### Setup environments ###

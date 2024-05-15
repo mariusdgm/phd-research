@@ -14,7 +14,6 @@ neural_fit_mode: "mean"
 # Learning hyperparameters
 alpha: 0.1  # Learning rate
 gamma: 0.9  # Discount factor
-epsilon: 0.01  # Convergence criterion
 batch_size: 32
 
 min_samples: 10
@@ -33,11 +32,13 @@ agent_params:
     training_freq: 4
     target_model_update_freq: 4000
     loss_fcn: mse_loss
+
+    epsilon:
+      start: 1.0
+      end: 0.01
+      decay: 250_000
  
-epsilon:
-  start: 1.0
-  end: 0.01
-  decay: 250_000
+
 
 optim:
   name: Adam

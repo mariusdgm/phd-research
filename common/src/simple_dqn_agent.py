@@ -18,7 +18,8 @@ import gym
 from .replay_buffer import ReplayBuffer
 from common.src.experiment_utils import seed_everything
 
-from distribution_src import TransitionDataset, QNET
+from .distribution_src import TransitionDataset, QNET
+
 
 def replace_keys(d, original_key, new_key):
     """
@@ -37,11 +38,13 @@ def replace_keys(d, original_key, new_key):
             new_dict[updated_key] = value
     return new_dict
 
+
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
+
 
 class AgentDQN:
     def __init__(
@@ -101,7 +104,6 @@ class AgentDQN:
             self.train_stats_file = os.path.join(
                 self.experiment_output_folder, f"{self.experiment_name}_train_stats"
             )
-
 
         self.config = config
         if self.config:
@@ -199,15 +201,11 @@ class AgentDQN:
 
         self.batch_size = agent_params.get("batch_size")
         self.training_freq = agent_params.get("training_freq")
-        self.target_model_update_freq = agent_params.get(
-            "target_model_update_freq"
-        )
+        self.target_model_update_freq = agent_params.get("target_model_update_freq")
         self.gamma = agent_params.get("gamma")
         self.loss_function = agent_params.get("loss_fcn")
 
-        eps_settings = agent_params.get(
-            "epsilon"
-        )
+        eps_settings = agent_params.get("epsilon")
         self.epsilon_by_frame = self._get_linear_decay_function(
             start=eps_settings["start"],
             end=eps_settings["end"],
@@ -226,7 +224,7 @@ class AgentDQN:
             action_dim=buffer_settings.get("action_dim"),
             n_step=buffer_settings.get("n_step"),
         )
-        
+
         self.logger.info("Loaded configuration settings.")
 
     def _get_exp_decay_function(self, start: float, end: float, decay: float):
@@ -267,13 +265,14 @@ class AgentDQN:
         estimator_settings = config.get("estimator", {"model": "Conv_QNET", "args": {}})
 
         # TODO: get sizes to reach here
+        # TODO: implement model instantiation
         # self.policy_model = QNET(
         #     input_size, output_size,
         # )
         # self.target_model = QNET(
         #     input_size, output_size,
         # )
-        
+
         # else:
         #     estiamtor_name = estimator_settings["model"]
         #     raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
@@ -348,7 +347,6 @@ class AgentDQN:
             model_file,
         )
         self.logger.debug(f"Models saved at t = {self.t}")
-
 
     def save_training_status(self):
         status_dict = {
@@ -861,7 +859,7 @@ class AgentDQN:
         expected_q_value = rewards + self.gamma * (
             next_q_values * (1 - dones) + (-1 / (1 - self.gamma)) * dones
         )
-        
+
         if self.loss_function == "mse_loss":
             loss = F.mse_loss(selected_q_value, expected_q_value)
 
@@ -873,6 +871,7 @@ class AgentDQN:
         self.optimizer.step()
 
         return loss.item()
+
 
 def main():
     pass
