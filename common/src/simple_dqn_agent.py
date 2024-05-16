@@ -11,14 +11,12 @@ from typing import List, Dict
 import torch.optim as optim
 import torch.nn.functional as F
 
-# from tensorboardX import SummaryWriter
-
 import gym
 
 from .replay_buffer import ReplayBuffer
 from common.src.experiment_utils import seed_everything
 
-from .distribution_src import TransitionDataset, QNET
+from common.src.models import QNET
 
 
 def replace_keys(d, original_key, new_key):
@@ -57,7 +55,6 @@ class AgentDQN:
         save_checkpoints=True,
         logger=None,
         config={},
-        enable_tensorboard_logging=True,
     ) -> None:
         """A DQN agent implementation.
 
@@ -76,8 +73,6 @@ class AgentDQN:
             config (Dict, optional): Settings of the agent relevant to the models and training.
                                     If none is provided in the input, the agent will automatically build the default settings.
                                     Defaults to {}.
-            enable_tensorboard_logging (bool, optional): Specifies if logs should also be made using tensorboard.
-                                                        Defaults to True.
         """
 
         # assign environments
@@ -262,20 +257,23 @@ class AgentDQN:
             ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
-        estimator_settings = config.get("estimator", {"model": "Conv_QNET", "args": {}})
+        # TODO: variable estimator?
+        estimator_settings = config.get("estimator")
 
-        # TODO: get sizes to reach here
-        # TODO: implement model instantiation
-        # self.policy_model = QNET(
-        #     input_size, output_size,
-        # )
-        # self.target_model = QNET(
-        #     input_size, output_size,
-        # )
-
-        # else:
-        #     estiamtor_name = estimator_settings["model"]
-        #     raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
+        env = self.train_env
+        states = list(set([s for s, _ in env.mdp.keys()]))
+        actions = list(set([a for _, a in env.mdp.keys()]))
+       
+        ### Training
+        input_size = len(states[0])  # Or another way to represent the size of your input
+        output_size = len(actions)
+    
+        self.policy_model = QNET(
+            input_size, output_size,
+        )
+        self.target_model = QNET(
+            input_size, output_size,
+        )
 
         optimizer_settings = config.get("optim")
         self.optimizer = optim.Adam(
@@ -323,8 +321,6 @@ class AgentDQN:
         self.training_stats = checkpoint["training_stats"]
         self.validation_stats = checkpoint["validation_stats"]
 
-        if self.redo_attach:
-            self.redo_scores = checkpoint["redo_scores"]
 
     def save_checkpoint(self):
         self.logger.info(f"Saving checkpoint at t = {self.t} ...")
@@ -361,13 +357,6 @@ class AgentDQN:
             status_dict,
             self.train_stats_file,
         )
-
-        if self.tensor_board_writer:
-            tb_status_dict = status_dict.copy()
-            for key in ["redo_scores"]:
-                tb_status_dict.pop(key, None)
-
-            self._recursive_tensorboard_logging("", tb_status_dict)
 
         self.logger.debug(f"Training status saved at t = {self.t}")
 
@@ -536,8 +525,6 @@ class AgentDQN:
             epoch_time,
         )
 
-        # Compute redo stats if enabled
-
         return epoch_stats
 
     def train_episode(self, epoch_t: int, train_frames: int):
@@ -586,16 +573,6 @@ class AgentDQN:
                     self.policy_model_update_counter += 1
                     policy_trained_times += 1
 
-                # Reset policy network with redo if enabled
-                if self.redo_attach and self.redo_reinit:
-                    if self.t % self.redo_freq == 0 and self.t > self.replay_start_size:
-                        reset_details = self.policy_model.apply_redo()
-                        layer_to_optim_idx = map_layers_to_optimizer_indices(
-                            self.policy_model, self.optimizer
-                        )
-                        reset_optimizer_states(
-                            reset_details, self.optimizer, layer_to_optim_idx
-                        )
 
                 # Update the target network only after some number of policy network updates
                 if (
@@ -807,6 +784,7 @@ class AgentDQN:
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
+            action = action.flatten().item()
             s_prime, reward, is_terminated, truncated, info = self.validation_env.step(
                 action
             )

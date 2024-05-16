@@ -1,6 +1,7 @@
 """Rerun experiments but instead of NFQI and NFPE, run DQN
 
 """
+
 import os
 import sys
 import time
@@ -14,7 +15,7 @@ from argparse import Namespace
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(root_dir)
 
-from common.src.dqn.dist_dqn_src import run_sampling_dqn_experiment
+from common.src.distribution_src import run_dqn_distribution_correction_experiment
 from common.src.experiment_utils import (
     setup_logger,
     convert_from_string,
@@ -28,8 +29,7 @@ def run(opts: Namespace) -> None:
     )
     opts.seed = random.randint(0, 2**32 - 1) if opts.seed is None else opts.seed
     opts.start_state = convert_from_string(opts.start_state)
-    opts.terminal_states = namespace_to_dict(opts.terminal_states)
-    opts_dict = vars(opts)
+    opts_dict = namespace_to_dict(opts)
 
     with open(os.path.join(opts.out_dir, "post_cfg.yaml"), "w") as f:
         # Use PyYAML to write the dictionary to a YAML file
@@ -40,54 +40,14 @@ def run(opts: Namespace) -> None:
     )
 
     # TODO: implement dqn experiment with parametrization
-    loss_record, bm_error_validation, bm_error_train = run_sampling_dqn_experiment(
-        tau=opts.tau,
-        seed=opts.seed,
-        run_id=opts.run_id,
-        rows=opts.rows,
-        cols=opts.cols,
-        start_state=opts.start_state,
-        p_success=opts.p_success,
-        terminal_states=opts.terminal_states,
-        num_steps=opts.num_steps,
-        epsilon=opts.epsilon,
-        gamma=opts.gamma,
-        batch_size=opts.batch_size,
-        min_samples=opts.min_samples,
-        train_max_iterations=opts.train_max_iterations,
-        neural_fit_mode=opts.neural_fit_mode,
+    run_dqn_distribution_correction_experiment(
+        config=opts_dict,
         logger=logger,
     )
 
     logger.info(
         f"Finished experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
-
-    # Convert results to DataFrame (if not already in a suitable format)
-    df_loss = pd.DataFrame(
-        loss_record, columns=["epoch", "total_loss", "scheduler_lr"]
-    )
-
-    # Saving the loss record to a CSV file
-    loss_record_path = os.path.join(opts.out_dir, "loss_record.csv")
-    df_loss.to_csv(loss_record_path, index=False)
-
-    bellman_errors = {
-        'validation_error': bm_error_validation,
-        'training_error': bm_error_train
-    }
-
-    # Specify the output directory and file path
-    bm_error_path = os.path.join(opts.out_dir, "bellman_error.csv")
-
-    # Write to a CSV file
-    with open(bm_error_path, mode='w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(bellman_errors.keys())
-        writer.writerow(bellman_errors.values())
-
-    logger.info(f"Saved loss record to {loss_record_path}")
-    logger.info(f"Saved Bellman error to {bm_error_path}")
 
     return True
 

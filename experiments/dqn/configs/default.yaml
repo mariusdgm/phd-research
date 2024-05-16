@@ -9,18 +9,13 @@ cols: 10
 p_success: 1
 num_steps: 40_000
 train_max_iterations: 30
-neural_fit_mode: "mean"
-
-# Learning hyperparameters
-alpha: 0.1  # Learning rate
-gamma: 0.9  # Discount factor
-batch_size: 32
-
-min_samples: 10
+neural_fit_mode: "max"
+algorithm: "default"
 
 agent_params:
   agent: AgentDQN
   args_:
+    gamma: 0.9
     train_step_cnt: 500
     validation_enabled: True
     validation_step_cnt: 250
@@ -30,7 +25,7 @@ agent_params:
     
     batch_size: 32
     training_freq: 4
-    target_model_update_freq: 4000
+    target_model_update_freq: 40
     loss_fcn: mse_loss
 
     epsilon:
@@ -38,12 +33,10 @@ agent_params:
       end: 0.01
       decay: 250_000
  
-
-
 optim:
   name: Adam
   args_:
-    lr: 0.00025
+    lr: 0.1
     eps: 0.0003125
 
 replay_buffer:

@@ -21,6 +21,9 @@ from common.src.utils import create_random_policy
 from common.src.policy_iteration import random_policy_evaluation_q_stochastic
 from common.src.experiment_utils import seed_everything
 from common.src.dqn.replay_buffer import ReplayBuffer
+from common.src.simple_dqn_agent import AgentDQN
+from common.src.models import QNET
+
 
 import torch
 import torch.nn as nn
@@ -442,19 +445,7 @@ def bellman_error(
     return bellmans_error
 
 
-class QNET(nn.Module):
-    def __init__(self, input_size, output_size):
-        super(QNET, self).__init__()
-        self.network = nn.Sequential(
-            nn.Linear(input_size, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, output_size),
-        )
 
-    def forward(self, x):
-        return self.network(x)
 
 
 def run_sampling_regret_experiment(
@@ -897,27 +888,14 @@ def generate_train_test_split_with_valid_path(
 
 
 def run_dqn_distribution_correction_experiment(
-    tau,
-    seed,
-    run_id,
-    rows,
-    cols,
-    start_state,
-    p_success,
-    terminal_states,
-    num_steps,
-    gamma,
-    min_samples,
-    batch_size,
-    train_max_iterations,
-    neural_fit_mode,
-    algorithm=None,
+    config,
     logger=None,
 ):
 
     if logger is None:
         logger = logging.getLogger(__name__)
 
+    algorithm = config.get("algorithm")
     if algorithm is None:
         logger.error("Algorithm must be provided")
         raise ValueError("Algorithm must be provided")
@@ -926,31 +904,19 @@ def run_dqn_distribution_correction_experiment(
         logger.error("Algorithm must be default, adjusted_loss, or dataset_normed")
         raise ValueError("Algorithm must be default, adjusted_loss, or dataset_normed")
 
-    seed_everything(run_id)
-    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    # seed_everything(run_id)
+    # env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
 
-    states = list(set([s for s, _ in env.mdp.keys()]))
-    actions = list(set([a for _, a in env.mdp.keys()]))
-    transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
+    # states = list(set([s for s, _ in env.mdp.keys()]))
+    # actions = list(set([a for _, a in env.mdp.keys()]))
+    # transitions_list = [(key[0], key[1], *value[0]) for key, value in env.mdp.items()]
 
+    seed = config.get("seed")
     seed_everything(seed)
-    input_size = len(states[0])
-    output_size = len(actions)
     
-    policy_net = QNET(input_size, output_size)
-    target_net = QNET(input_size, output_size)
-
     if algorithm == "default":
-        loss_record = train_dqn_network(
-            policy_net,
-            target_net,
-            env,
-            gamma,
-            batch_size,
-            max_iterations=train_max_iterations,
-            frequency_scaling=False,
-            mode=neural_fit_mode,
-            dataset_normed=False,
+        train_dqn_network(
+            config=config,
             logger=logger,
         )
 
@@ -980,45 +946,47 @@ def run_dqn_distribution_correction_experiment(
     #         logger=logger,
     #     )
 
-    bm_error = compute_validation_bellmans_error(
-        qnet,
-        validation_transitions=transitions_list,
-        error_mode=neural_fit_mode,
-        gamma=gamma,
-    )
+    # bm_error = compute_validation_bellmans_error(
+    #     qnet,
+    #     validation_transitions=transitions_list,
+    #     error_mode=neural_fit_mode,
+    #     gamma=gamma,
+    # )
 
-    return loss_record, bm_error
+    return True
 
 def train_dqn_network(
-    qnet,
-    env,
-    gamma,
-    batch_size,
-    max_iterations,
-    frequency_scaling,
-    mode,
-    dataset_normed,
-    in_features,
-    buffer_settings,
+    config,
     logger,
 ):
+    logger.info(f"Starting experiment: {config['full_title']}")
+
+    rows = config["rows"]
+    cols = config["cols"]
+    start_state = config["start_state"]
+    p_success = config["p_success"]
+    terminal_states = config["terminal_states"]
+    run_id = config["run_id"]
+
+    ### Setup environments ###
+    train_env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    validation_env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+
+    ### Setup output and loading paths ###
+
+    experiment_agent = AgentDQN(
+        train_env=train_env,
+        validation_env=validation_env,
+        experiment_output_folder=config["out_dir"],
+        experiment_name=config["experiment"],
+        resume_training_path=None,
+        save_checkpoints=False,
+        logger=logger,
+        config=config,
+    )
+
+    experiment_agent.train(config["train_max_iterations"])
     
-    # make 2 envs
-    
-    # make replay buffer
-    replay_buffer = ReplayBuffer(
-            max_size=buffer_settings.get("max_size"),
-            state_dim=in_features,
-            action_dim=buffer_settings.get("action_dim"),
-            n_step=buffer_settings.get("n_step"),
-        )
-    
-    # 
-    
-    # make 2 networks
-    
-    # epsilon_by_frame = get_linear_decay_function(epsilon_start, epsilon_end, epsilon_decay)
     
     
-    pass
     
