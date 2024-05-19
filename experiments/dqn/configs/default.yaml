@@ -17,7 +17,7 @@ agent_params:
   args_:
     gamma: 0.9
     train_step_cnt: 500
-    validation_enabled: True
+    validation_enabled: False
     validation_step_cnt: 250
     validation_epsilon: 0.001
     
@@ -31,7 +31,7 @@ agent_params:
     epsilon:
       start: 1.0
       end: 0.01
-      decay: 250_000
+      decay: 250_00
  
 optim:
   name: Adam

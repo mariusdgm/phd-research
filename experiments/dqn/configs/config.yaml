@@ -1,1 +1,1 @@
-num_steps: [20_000]
+algorithm: ["default", "dataset_normed"]

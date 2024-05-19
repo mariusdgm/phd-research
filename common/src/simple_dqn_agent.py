@@ -14,6 +14,7 @@ import torch.nn.functional as F
 import gym
 
 from .replay_buffer import ReplayBuffer
+from .frequency_normalization import normalize_frequencies
 from common.src.experiment_utils import seed_everything
 
 from common.src.models import QNET
@@ -36,6 +37,15 @@ def replace_keys(d, original_key, new_key):
             new_dict[updated_key] = value
     return new_dict
 
+def normalize_replay_buffer(buffer):
+    transitions = list(buffer.buffer)
+    normalized_transitions = normalize_frequencies(transitions)
+
+    new_buffer = ReplayBuffer(buffer.max_size, buffer.state_dim, buffer.action_dim, buffer.n_step)
+    for transition in normalized_transitions:
+        new_buffer.append(*transition)
+
+    return new_buffer
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
@@ -86,6 +96,7 @@ class AgentDQN:
         # set up path names
         self.experiment_output_folder = experiment_output_folder
         self.experiment_name = experiment_name
+        self.normalize_replay_buffer_freq = config.get("normalize_replay_buffer_freq", False)
 
         self.model_file_folder = (
             "model_checkpoints"  # models will be saved at each epoch
@@ -263,16 +274,20 @@ class AgentDQN:
         env = self.train_env
         states = list(set([s for s, _ in env.mdp.keys()]))
         actions = list(set([a for _, a in env.mdp.keys()]))
-       
+
         ### Training
-        input_size = len(states[0])  # Or another way to represent the size of your input
+        input_size = len(
+            states[0]
+        )  # Or another way to represent the size of your input
         output_size = len(actions)
-    
+
         self.policy_model = QNET(
-            input_size, output_size,
+            input_size,
+            output_size,
         )
         self.target_model = QNET(
-            input_size, output_size,
+            input_size,
+            output_size,
         )
 
         optimizer_settings = config.get("optim")
@@ -321,12 +336,16 @@ class AgentDQN:
         self.training_stats = checkpoint["training_stats"]
         self.validation_stats = checkpoint["validation_stats"]
 
-
-    def save_checkpoint(self):
+    def save_checkpoint(
+        self, save_models=False, save_training_status=True, save_buffer=False
+    ):
         self.logger.info(f"Saving checkpoint at t = {self.t} ...")
-        self.save_model()
-        self.save_training_status()
-        self.replay_buffer.save(self.replay_buffer_file)
+        if save_models:
+            self.save_model()
+        if save_training_status:
+            self.save_training_status()
+        if save_buffer:
+            self.replay_buffer.save(self.replay_buffer_file)
         self.logger.info(f"Checkpoint saved at t = {self.t}")
 
     def save_model(self):
@@ -566,13 +585,18 @@ class AgentDQN:
             ):
                 # Train every training_freq number of frames
                 if self.t % self.training_freq == 0:
-                    sample = self.replay_buffer.sample(self.batch_size)
+                    if self.normalize_replay_buffer_freq:
+                        self.logger.info("Normalizing replay buffer...")
+                        normed_replay_buffer = normalize_replay_buffer(self.replay_buffer)
+                        sample = normed_replay_buffer.sample(self.batch_size)
+                    else:
+                        sample = self.replay_buffer.sample(self.batch_size)
+                        
                     loss_val = self.model_learn(sample)
 
                     self.losses.append(loss_val)
                     self.policy_model_update_counter += 1
                     policy_trained_times += 1
-
 
                 # Update the target network only after some number of policy network updates
                 if (

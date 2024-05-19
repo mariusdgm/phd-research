@@ -18,18 +18,30 @@ sys.path.append(root_dir)
 from common.src.distribution_src import run_dqn_distribution_correction_experiment
 from common.src.experiment_utils import (
     setup_logger,
-    convert_from_string,
+    cleanup_file_handlers,
     namespace_to_dict,
 )
 
+def log_types(logger, structure, prefix=''):
+    if isinstance(structure, dict):
+        for key, value in structure.items():
+            logger.info(f"{prefix}{key}: {type(value).__name__}")
+            log_types(logger, value, prefix + '  ')
+    elif isinstance(structure, list):
+        for i, value in enumerate(structure):
+            logger.info(f"{prefix}[{i}]: {type(value).__name__}")
+            log_types(logger, value, prefix + '  ')
+    else:
+        logger.info(f"{prefix}{type(structure).__name__}")
 
 def run(opts: Namespace) -> None:
     logger = setup_logger(
         opts.full_title, log_file=os.path.join(opts.out_dir, "experiment_log.log")
     )
     opts.seed = random.randint(0, 2**32 - 1) if opts.seed is None else opts.seed
-    opts.start_state = convert_from_string(opts.start_state)
     opts_dict = namespace_to_dict(opts)
+    
+   
 
     with open(os.path.join(opts.out_dir, "post_cfg.yaml"), "w") as f:
         # Use PyYAML to write the dictionary to a YAML file
@@ -40,7 +52,7 @@ def run(opts: Namespace) -> None:
     )
 
     # TODO: implement dqn experiment with parametrization
-    run_dqn_distribution_correction_experiment(
+    bm_error_records = run_dqn_distribution_correction_experiment(
         config=opts_dict,
         logger=logger,
     )
@@ -48,6 +60,16 @@ def run(opts: Namespace) -> None:
     logger.info(
         f"Finished experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
+    
+    df_loss = pd.DataFrame(
+        bm_error_records, columns=["epoch", "bellman_error"]
+    )
+
+    # Saving the loss record to a CSV file
+    loss_record_path = os.path.join(opts.out_dir, "bellman_errors.csv")
+    df_loss.to_csv(loss_record_path, index=False)
+    
+    cleanup_file_handlers(logger)
 
     return True
 

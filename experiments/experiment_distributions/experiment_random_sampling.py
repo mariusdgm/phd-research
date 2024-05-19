@@ -14,7 +14,6 @@ from common.src.distribution_src import run_sampling_regret_experiment_with_poli
 from common.src.experiment_utils import (
     setup_logger,
     seed_everything,
-    convert_from_string,
     namespace_to_dict,
 )
 
@@ -24,9 +23,8 @@ def run(opts: Namespace) -> None:
         opts.full_title, log_file=os.path.join(opts.out_dir, "experiment_log.log")
     )
     opts.seed = random.randint(0, 2**32 - 1) if opts.seed is None else opts.seed
-    opts.start_state = convert_from_string(opts.start_state)
-    opts.terminal_states = namespace_to_dict(opts.terminal_states)
-    opts_dict = vars(opts)
+    opts_dict = namespace_to_dict(opts)
+  
 
     with open(os.path.join(opts.out_dir, "post_cfg.yaml"), "w") as f:
         # Use PyYAML to write the dictionary to a YAML file

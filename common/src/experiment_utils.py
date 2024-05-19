@@ -8,7 +8,7 @@ import subprocess
 import threading
 import shutil
 import ast
-import argparse
+from argparse import Namespace
 
 from typing import List
 
@@ -129,48 +129,28 @@ def seed_everything(seed):
     torch.backends.cudnn.benchmark = True
 
 
-def convert_from_string(value):
-    """
-    Convert a string representation of a Python literal into its actual type.
-    Specifically useful for converting string tuples and dictionaries with tuple keys.
-    """
+def is_tuple_string(s):
     try:
-        # Directly return if value is already in the expected type
-        if isinstance(value, (dict, tuple)):
-            return value
+        # Use ast.literal_eval to safely evaluate if the string is a tuple
+        evaluated = ast.literal_eval(s)
+        return isinstance(evaluated, tuple)
+    except:
+        return False
 
-        evaluated_value = ast.literal_eval(value)
-        # If the result is a dictionary with string keys that represent tuples,
-        # convert those keys into actual tuples
-        if isinstance(evaluated_value, dict):
-            return {ast.literal_eval(key): val for key, val in evaluated_value.items()}
-        else:
-            return evaluated_value
+def convert_tuple_string_to_tuple(key):
+    try:
+        return ast.literal_eval(key)
     except (ValueError, SyntaxError):
-        return value
+        return key
 
-
-def namespace_to_dict(value):
-    """
-    Converts an argparse.Namespace or a similar structure into a dictionary,
-    ensuring keys that are supposed to be tuples are correctly converted.
-    """
-    if isinstance(value, dict):
-        # Already a dictionary, apply tuple conversion if necessary
-        return {
-            (
-                ast.literal_eval(key)
-                if isinstance(key, str) and key.startswith("(")
-                else key
-            ): val
-            for key, val in value.items()
-        }
-    elif isinstance(value, argparse.Namespace):
-        # Convert namespace to dict and then apply the same logic recursively
-        return namespace_to_dict(vars(value))
+def namespace_to_dict(namespace):
+    if isinstance(namespace, Namespace):
+        return {key: namespace_to_dict(value) for key, value in vars(namespace).items()}
+    elif isinstance(namespace, list):
+        return [namespace_to_dict(item) for item in namespace]
+    elif isinstance(namespace, dict):
+        return {convert_tuple_string_to_tuple(key): namespace_to_dict(value) for key, value in namespace.items()}
+    elif isinstance(namespace, str) and is_tuple_string(namespace):
+        return ast.literal_eval(namespace)
     else:
-        # For other types, attempt literal evaluation or return as is
-        try:
-            return ast.literal_eval(value)
-        except (ValueError, SyntaxError):
-            return value
+        return namespace

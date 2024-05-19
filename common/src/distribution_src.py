@@ -22,6 +22,7 @@ from common.src.policy_iteration import random_policy_evaluation_q_stochastic
 from common.src.experiment_utils import seed_everything
 from common.src.dqn.replay_buffer import ReplayBuffer
 from common.src.simple_dqn_agent import AgentDQN
+from common.src.frequency_normalization import get_frequency_scaling, normalize_frequencies
 from common.src.models import QNET
 
 
@@ -30,7 +31,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.optim.lr_scheduler import LinearLR
-from collections import Counter
 
 import networkx as nx
 
@@ -54,11 +54,14 @@ def make_env(rows, cols, start_state, p_success, terminal_states, seed, walls=No
         },
     )
 
-def randomize_walls_positions(rows, columns, starting_cell, terminal_cells, ratio, seed):
+
+def randomize_walls_positions(
+    rows, columns, starting_cell, terminal_cells, ratio, seed
+):
     """Randomly select cells where to place walls in the gridworld.
     Walls can't be placed in the starting cell or terminal cells.
     The number of wall cells is determined by the `percentage` parameter.
-    
+
     Args:
         rows (int): Number of rows in the grid.
         columns (int): Number of columns in the grid.
@@ -77,7 +80,7 @@ def randomize_walls_positions(rows, columns, starting_cell, terminal_cells, rati
 
     # Create a set of all possible cell coordinates
     all_cells = {(r, c) for r in range(rows) for c in range(columns)}
-    
+
     # Remove the starting and terminal cells from possible wall locations
     forbidden_cells = set(terminal_cells)
     forbidden_cells.add(starting_cell)
@@ -89,8 +92,9 @@ def randomize_walls_positions(rows, columns, starting_cell, terminal_cells, rati
 
     # Randomly select wall_count cells to be walls
     wall_cells = set(random.sample(available_cells, wall_count))
-    
+
     return wall_cells
+
 
 def softmax(logits, tau):
     logits = np.array(logits)  # Ensure logits is a NumPy array for consistency
@@ -319,54 +323,6 @@ def train_net_with_neural_fitting(
     return loss_record
 
 
-def get_frequency_scaling(transitions):
-    transitions_for_counting = [
-        (s, a, ns, r, int(d)) for s, a, ns, r, d, _ in transitions
-    ]
-    transition_counts = Counter(transitions_for_counting)
-
-    # Calculate expected frequency under uniform distribution
-    N_total = len(transitions)
-    N_unique = len(set(transitions_for_counting))
-    expected_frequency = N_total / N_unique
-
-    # Compute scaling factor relative to uniform distribution
-    inverse_frequency_scaling = {
-        t: expected_frequency / count for t, count in transition_counts.items()
-    }
-    return inverse_frequency_scaling
-
-
-def normalize_frequencies(transitions):
-    unique_transitions = list(set(transitions))
-    total_size = len(transitions)
-    num_unique = len(unique_transitions)
-
-    # Calculate the ideal uniform count for each transition
-    ideal_count = total_size // num_unique
-
-    # Fill the dataset up to the ideal count
-    normalized_transitions = []
-    for transition in unique_transitions:
-        normalized_transitions.extend([transition] * ideal_count)
-
-    # Calculate remaining space in the dataset
-    remaining_space = total_size - len(normalized_transitions)
-
-    # Fill the remaining space by uniform sampling
-    if remaining_space > 0:
-        indices = np.random.choice(
-            len(unique_transitions), size=remaining_space, replace=False
-        )
-        additional_transitions = [unique_transitions[i] for i in indices]
-        normalized_transitions.extend(additional_transitions)
-
-    # Shuffle the dataset to randomize the order
-    np.random.shuffle(normalized_transitions)
-
-    return normalized_transitions
-
-
 def compute_validation_bellmans_error(
     model, validation_transitions, error_mode, gamma=0.99, logger=None
 ):
@@ -443,9 +399,6 @@ def bellman_error(
     bellmans_error = loss_fn(action_q_values, target_q_values)
 
     return bellmans_error
-
-
-
 
 
 def run_sampling_regret_experiment(
@@ -913,49 +866,35 @@ def run_dqn_distribution_correction_experiment(
 
     seed = config.get("seed")
     seed_everything(seed)
+
     
-    if algorithm == "default":
-        train_dqn_network(
-            config=config,
+    agent = setup_dqn_agent(
+        config=config,
+        logger=logger,
+    )
+
+    transitions_list = [
+        (key[0], key[1], *value[0]) for key, value in agent.train_env.mdp.items()
+    ]
+
+    bm_error_record = []
+    for i in range(config["train_max_iterations"]):
+        agent.train(i)
+
+        bm_error_validation = compute_validation_bellmans_error(
+            agent.target_model,
+            validation_transitions=transitions_list,
+            error_mode=config["neural_fit_mode"],
+            gamma=agent.gamma,
             logger=logger,
         )
 
-    # if algorithm == "frequency_scaling":
-    #     loss_record = train_dqn_network(
-    #         qnet,
-    #         env,
-    #         gamma,
-    #         batch_size,
-    #         max_iterations=train_max_iterations,
-    #         frequency_scaling=True,
-    #         mode=neural_fit_mode,
-    #         dataset_normed=False,
-    #         logger=logger,
-    #     )
+        bm_error_record.append((i, bm_error_validation))
 
-    # if algorithm == "dataset_normed":
-    #     loss_record = train_dqn_network(
-    #         qnet,
-    #         env,
-    #         gamma,
-    #         batch_size,
-    #         max_iterations=train_max_iterations,
-    #         frequency_scaling=False,
-    #         mode=neural_fit_mode,
-    #         dataset_normed=True,
-    #         logger=logger,
-    #     )
+    return bm_error_record
 
-    # bm_error = compute_validation_bellmans_error(
-    #     qnet,
-    #     validation_transitions=transitions_list,
-    #     error_mode=neural_fit_mode,
-    #     gamma=gamma,
-    # )
 
-    return True
-
-def train_dqn_network(
+def setup_dqn_agent(
     config,
     logger,
 ):
@@ -967,10 +906,15 @@ def train_dqn_network(
     p_success = config["p_success"]
     terminal_states = config["terminal_states"]
     run_id = config["run_id"]
+    
+    if config["algorithm"] == "dataset_normed":
+        config["normalize_replay_buffer_freq"] = True
 
     ### Setup environments ###
     train_env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
-    validation_env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    validation_env = make_env(
+        rows, cols, start_state, p_success, terminal_states, run_id
+    )
 
     ### Setup output and loading paths ###
 
@@ -980,13 +924,9 @@ def train_dqn_network(
         experiment_output_folder=config["out_dir"],
         experiment_name=config["experiment"],
         resume_training_path=None,
-        save_checkpoints=False,
+        save_checkpoints=True,
         logger=logger,
         config=config,
     )
 
-    experiment_agent.train(config["train_max_iterations"])
-    
-    
-    
-    
+    return experiment_agent
