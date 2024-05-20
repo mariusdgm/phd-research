@@ -31,7 +31,7 @@ agent_params:
     epsilon:
       start: 1.0
       end: 0.01
-      decay: 250_00
+      decay: 250_0
  
 optim:
   name: Adam

@@ -34,6 +34,9 @@ def log_types(logger, structure, prefix=''):
     else:
         logger.info(f"{prefix}{type(structure).__name__}")
 
+# TODO: modify epsilon greedy to reach exploitation after 33%
+# TODO: add a parameter for skewness (entropy) for the replay buffer to check distribution
+
 def run(opts: Namespace) -> None:
     logger = setup_logger(
         opts.full_title, log_file=os.path.join(opts.out_dir, "experiment_log.log")

@@ -859,7 +859,7 @@ class AgentDQN:
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
 
         expected_q_value = rewards + self.gamma * (
-            next_q_values * (1 - dones) + (-1 / (1 - self.gamma)) * dones
+            next_q_values * (1 - dones)
         )
 
         if self.loss_function == "mse_loss":
