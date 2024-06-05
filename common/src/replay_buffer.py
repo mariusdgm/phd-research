@@ -35,8 +35,8 @@ class ReplayBuffer:
 
         transitions = []
         for _ in range(batch_size):
-            start_idx = random.randint(0, len(self) - self.n_step*stride - 1)
-            end_idx = start_idx + self.n_step*stride
+            start_idx = random.randint(0, len(self) - self.n_step * stride - 1)
+            end_idx = start_idx + self.n_step * stride
             samples = self.buffer[start_idx:end_idx:stride]
 
             state, _, _, _, _ = samples[0]
@@ -44,7 +44,7 @@ class ReplayBuffer:
 
             reward = 0
             for i in range(self.n_step):
-                _, action, r, _, _ = samples[i*stride]
+                _, action, r, _, _ = samples[i * stride]
                 reward += r * pow(0.99, i)
 
             transitions.append((state, action, reward, next_state, done))
@@ -71,12 +71,14 @@ class ReplayBuffer:
         example_entropy = entropy(counts, base=2)
 
         return example_entropy
-    
+
     def normalize_replay_buffer(self):
         transitions = list(self.buffer)
         normalized_transitions = normalize_frequencies(transitions)
 
-        normed_buffer = ReplayBuffer(self.max_size, self.state_dim, self.action_dim, self.n_step)
+        normed_buffer = ReplayBuffer(
+            self.max_size, self.state_dim, self.action_dim, self.n_step
+        )
         for transition in normalized_transitions:
             normed_buffer.append(*transition)
 

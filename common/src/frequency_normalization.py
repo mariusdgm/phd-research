@@ -1,5 +1,6 @@
 import numpy as np
 from collections import Counter
+import torch
 
 
 def get_frequency_scaling(transitions):
@@ -19,9 +20,19 @@ def get_frequency_scaling(transitions):
     }
     return inverse_frequency_scaling
 
-
+def transform_to_hashable_type(item):
+    if isinstance(item, torch.Tensor):
+        return tuple(item.tolist())
+    elif isinstance(item, (list, tuple)):
+        return tuple(transform_to_hashable_type(i) for i in item)
+    else:
+        return item
+    
 def normalize_frequencies(transitions):
-    unique_transitions = list(set(transitions))
+
+    hashable_transitions = [tuple(transform_to_hashable_type(elem) for elem in transition) for transition in transitions]
+    unique_transitions = list(set(hashable_transitions))
+    
     total_size = len(transitions)
     num_unique = len(unique_transitions)
 
