@@ -2,6 +2,8 @@ from collections import deque
 import numpy as np
 import random
 import pickle
+from scipy.stats import entropy
+from .frequency_normalization import normalize_frequencies
 
 
 class ReplayBuffer:
@@ -58,3 +60,24 @@ class ReplayBuffer:
     def load(self, file_name):
         with open(file_name, "rb") as f:
             self.buffer = pickle.load(f)
+
+    def calculate_buffer_entropy(self):
+        if len(self.buffer) == 0:
+            return 0
+
+        examples = [(transition[0], transition[1]) for transition in self.buffer]
+        example_strings = [f"{state}_{action}" for state, action in examples]
+        unique_examples, counts = np.unique(example_strings, return_counts=True)
+        example_entropy = entropy(counts, base=2)
+
+        return example_entropy
+    
+    def normalize_replay_buffer(self):
+        transitions = list(self.buffer)
+        normalized_transitions = normalize_frequencies(transitions)
+
+        normed_buffer = ReplayBuffer(self.max_size, self.state_dim, self.action_dim, self.n_step)
+        for transition in normalized_transitions:
+            normed_buffer.append(*transition)
+
+        return normed_buffer

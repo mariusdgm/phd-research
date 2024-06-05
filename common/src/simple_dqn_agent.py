@@ -10,11 +10,12 @@ from typing import List, Dict
 
 import torch.optim as optim
 import torch.nn.functional as F
+import torch.nn as nn
+
 
 import gym
 
 from .replay_buffer import ReplayBuffer
-from .frequency_normalization import normalize_frequencies
 from common.src.experiment_utils import seed_everything
 
 from common.src.models import QNET
@@ -36,16 +37,6 @@ def replace_keys(d, original_key, new_key):
         else:
             new_dict[updated_key] = value
     return new_dict
-
-def normalize_replay_buffer(buffer):
-    transitions = list(buffer.buffer)
-    normalized_transitions = normalize_frequencies(transitions)
-
-    new_buffer = ReplayBuffer(buffer.max_size, buffer.state_dim, buffer.action_dim, buffer.n_step)
-    for transition in normalized_transitions:
-        new_buffer.append(*transition)
-
-    return new_buffer
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
@@ -268,7 +259,6 @@ class AgentDQN:
             ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
-        # TODO: variable estimator?
         estimator_settings = config.get("estimator")
 
         env = self.train_env
@@ -587,7 +577,7 @@ class AgentDQN:
                 if self.t % self.training_freq == 0:
                     if self.normalize_replay_buffer_freq:
                         self.logger.info("Normalizing replay buffer...")
-                        normed_replay_buffer = normalize_replay_buffer(self.replay_buffer)
+                        normed_replay_buffer = self.replay_buffer.normalize_replay_buffer()
                         sample = normed_replay_buffer.sample(self.batch_size)
                     else:
                         sample = self.replay_buffer.sample(self.batch_size)
@@ -842,33 +832,37 @@ class AgentDQN:
 
     def model_learn(self, sample):
         """Compute the loss with TD learning."""
+        self.optimizer.zero_grad()
         states, actions, rewards, next_states, dones = sample
 
         states = torch.stack(states, dim=0)
         actions = torch.LongTensor(actions).unsqueeze(1)
         rewards = torch.Tensor(rewards).unsqueeze(1)
         next_states = torch.stack(next_states, dim=0)
-        dones = torch.Tensor(dones).unsqueeze(1)
+        dones = torch.Tensor(dones).unsqueeze(1).type(torch.bool)
 
         self.policy_model.train()
+        self.target_model.eval()
 
         q_values = self.policy_model(states)
-        selected_q_value = q_values.gather(1, actions)
+        action_q_values = q_values.gather(1, actions)
 
         next_q_values = self.target_model(next_states).detach()
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
-
-        expected_q_value = rewards + self.gamma * (
-            next_q_values * (1 - dones)
+        
+        target_q_values = rewards + self.gamma * (
+            next_q_values * (~dones)
         )
 
         if self.loss_function == "mse_loss":
-            loss = F.mse_loss(selected_q_value, expected_q_value)
+            loss_fn = nn.MSELoss(reduction="none")
+            bellmans_errors = loss_fn(action_q_values, target_q_values)
 
         if self.loss_function == "smooth_l1":
-            loss = F.smooth_l1_loss(selected_q_value, expected_q_value)
+            loss_fn = nn.SmoothL1Loss(reduction="none")
+            bellmans_errors = loss_fn(action_q_values, target_q_values)
 
-        self.optimizer.zero_grad()
+        loss = bellmans_errors.mean()
         loss.backward()
         self.optimizer.step()
 

@@ -22,7 +22,10 @@ from common.src.policy_iteration import random_policy_evaluation_q_stochastic
 from common.src.experiment_utils import seed_everything
 from common.src.dqn.replay_buffer import ReplayBuffer
 from common.src.simple_dqn_agent import AgentDQN
-from common.src.frequency_normalization import get_frequency_scaling, normalize_frequencies
+from common.src.frequency_normalization import (
+    get_frequency_scaling,
+    normalize_frequencies,
+)
 from common.src.models import QNET
 
 
@@ -867,7 +870,6 @@ def run_dqn_distribution_correction_experiment(
     seed = config.get("seed")
     seed_everything(seed)
 
-    
     agent = setup_dqn_agent(
         config=config,
         logger=logger,
@@ -877,8 +879,8 @@ def run_dqn_distribution_correction_experiment(
         (key[0], key[1], *value[0]) for key, value in agent.train_env.mdp.items()
     ]
 
-    bm_error_record = []
-    for i in range(config["train_max_iterations"]):
+    experiment_data = []
+    for i in range(1, config["train_max_iterations"] + 1):
         agent.train(i)
 
         bm_error_validation = compute_validation_bellmans_error(
@@ -889,9 +891,21 @@ def run_dqn_distribution_correction_experiment(
             logger=logger,
         )
 
-        bm_error_record.append((i, bm_error_validation))
+        rb_entropy = agent.replay_buffer.calculate_buffer_entropy()
 
-    return bm_error_record
+        normalized_rb = agent.replay_buffer.normalize_replay_buffer()
+        normalized_rb_entropy = normalized_rb.calculate_buffer_entropy()
+
+        experiment_data.append(
+            {
+                "epoch": i,
+                "bellman_error": bm_error_validation,
+                "replay_buffer_entropy": rb_entropy,
+                "normalized_replay_buffer_entropy": normalized_rb_entropy,
+            }
+        )
+
+    return experiment_data
 
 
 def setup_dqn_agent(
@@ -906,7 +920,7 @@ def setup_dqn_agent(
     p_success = config["p_success"]
     terminal_states = config["terminal_states"]
     run_id = config["run_id"]
-    
+
     if config["algorithm"] == "dataset_normed":
         config["normalize_replay_buffer_freq"] = True
 

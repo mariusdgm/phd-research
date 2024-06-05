@@ -31,7 +31,7 @@ agent_params:
     epsilon:
       start: 1.0
       end: 0.01
-      decay: 250_0
+      decay: 5_000 # train_max_iterations * train_step_cnt * 0.33
  
 optim:
   name: Adam
