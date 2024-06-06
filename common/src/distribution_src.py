@@ -896,12 +896,17 @@ def run_dqn_distribution_correction_experiment(
         normalized_rb = agent.replay_buffer.normalize_replay_buffer()
         normalized_rb_entropy = normalized_rb.calculate_buffer_entropy()
 
+        examples = [(transition[0], transition[1]) for transition in agent.replay_buffer.buffer]
+        example_strings = [f"{state}_{action}" for state, action in examples]
+        unique_examples, counts = np.unique(example_strings, return_counts=True)
+        
         experiment_data.append(
             {
                 "epoch": i,
                 "bellman_error": bm_error_validation,
                 "replay_buffer_entropy": rb_entropy,
                 "normalized_replay_buffer_entropy": normalized_rb_entropy,
+                "nr_unique_examples": len(unique_examples),
             }
         )
 
