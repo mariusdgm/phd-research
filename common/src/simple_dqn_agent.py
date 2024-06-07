@@ -20,6 +20,18 @@ from common.src.experiment_utils import seed_everything
 
 from common.src.models import QNET
 
+# TODO: fix logging metrics 
+
+# Always save: return and number of steps per episode, max q per step of all episodes
+# Interesting info to save:
+# per training episode: sequence of states (frames), actions, Q(s_k, a) for all a, rewards, and perhaps episode length/number of steps to target (dar asta se poate infera)
+# per network checkpoint (ideally for each point in the graph/epoch): network weights
+# per target network update: target network weights
+ 
+# And to make it perfectly reproducible: original and renormalized buffers, minibatches or minibatch indices (but they recoverable from the seed and trajectories)
+
+# save stuff, rerun, make sure agent learns
+# if yes, then make a skewed 2-room or whatever problem, try in that problem, control amount of skew, see if there is signal in normalized vs unnormalized
 
 def replace_keys(d, original_key, new_key):
     """
