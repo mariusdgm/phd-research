@@ -574,6 +574,11 @@ class AgentDQN:
             )
             s_prime = torch.tensor(s_prime, device=device).float()
 
+            if is_terminated:
+                self.logger.info(
+                    f"Episode {self.episodes} terminated at frame {epoch_t} with reward {reward}"
+                )
+                
             self.replay_buffer.append(
                 self.train_s, action, reward, s_prime, is_terminated
             )
