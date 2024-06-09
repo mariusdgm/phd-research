@@ -20,18 +20,19 @@ from common.src.experiment_utils import seed_everything
 
 from common.src.models import QNET
 
-# TODO: fix logging metrics 
+# TODO: fix logging metrics
 
 # Always save: return and number of steps per episode, max q per step of all episodes
 # Interesting info to save:
 # per training episode: sequence of states (frames), actions, Q(s_k, a) for all a, rewards, and perhaps episode length/number of steps to target (dar asta se poate infera)
 # per network checkpoint (ideally for each point in the graph/epoch): network weights
 # per target network update: target network weights
- 
+
 # And to make it perfectly reproducible: original and renormalized buffers, minibatches or minibatch indices (but they recoverable from the seed and trajectories)
 
 # save stuff, rerun, make sure agent learns
 # if yes, then make a skewed 2-room or whatever problem, try in that problem, control amount of skew, see if there is signal in normalized vs unnormalized
+
 
 def replace_keys(d, original_key, new_key):
     """
@@ -49,6 +50,7 @@ def replace_keys(d, original_key, new_key):
         else:
             new_dict[updated_key] = value
     return new_dict
+
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
@@ -99,7 +101,9 @@ class AgentDQN:
         # set up path names
         self.experiment_output_folder = experiment_output_folder
         self.experiment_name = experiment_name
-        self.normalize_replay_buffer_freq = config.get("normalize_replay_buffer_freq", False)
+        self.normalize_replay_buffer_freq = config.get(
+            "normalize_replay_buffer_freq", False
+        )
 
         self.model_file_folder = (
             "model_checkpoints"  # models will be saved at each epoch
@@ -478,7 +482,9 @@ class AgentDQN:
             end_time = datetime.datetime.now()
             epoch_time = end_time - start_time
 
-            self.logger.info(f"Epoch {epoch} completed in {epoch_time}")
+            self.logger.info(
+                f"Epoch {epoch} completed in {epoch_time}. Frames seen: {self.t}"
+            )
             self.logger.info("\n")
 
         if self.tensor_board_writer:
@@ -578,7 +584,7 @@ class AgentDQN:
                 self.logger.info(
                     f"Episode {self.episodes} terminated at frame {epoch_t} with reward {reward}"
                 )
-                
+
             self.replay_buffer.append(
                 self.train_s, action, reward, s_prime, is_terminated
             )
@@ -594,11 +600,13 @@ class AgentDQN:
                 if self.t % self.training_freq == 0:
                     if self.normalize_replay_buffer_freq:
                         self.logger.info("Normalizing replay buffer...")
-                        normed_replay_buffer = self.replay_buffer.normalize_replay_buffer()
+                        normed_replay_buffer = (
+                            self.replay_buffer.normalize_replay_buffer()
+                        )
                         sample = normed_replay_buffer.sample(self.batch_size)
                     else:
                         sample = self.replay_buffer.sample(self.batch_size)
-                        
+
                     loss_val = self.model_learn(sample)
 
                     self.losses.append(loss_val)
@@ -866,10 +874,8 @@ class AgentDQN:
 
         next_q_values = self.target_model(next_states).detach()
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
-        
-        target_q_values = rewards + self.gamma * (
-            next_q_values * (~dones)
-        )
+
+        target_q_values = rewards + self.gamma * (next_q_values * (~dones))
 
         if self.loss_function == "mse_loss":
             loss_fn = nn.MSELoss(reduction="none")

@@ -13,12 +13,14 @@ class ReplayBuffer:
         self.action_dim = action_dim
         self.n_step = n_step
         self.buffer = deque(maxlen=self.max_size)
+        self.total_appends = 0  # Total number of elements added
 
     def __len__(self):
         return len(self.buffer)
 
     def append(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
+        self.total_appends += 1
 
     def sample(self, batch_size):
         if batch_size > len(self):
@@ -55,11 +57,11 @@ class ReplayBuffer:
 
     def save(self, file_name):
         with open(file_name, "wb") as f:
-            pickle.dump(self.buffer, f)
+            pickle.dump((self.buffer, self.total_appends), f)
 
     def load(self, file_name):
         with open(file_name, "rb") as f:
-            self.buffer = pickle.load(f)
+            self.buffer, self.total_appends = pickle.load(f)
 
     def calculate_buffer_entropy(self):
         if len(self.buffer) == 0:
@@ -83,3 +85,11 @@ class ReplayBuffer:
             normed_buffer.append(*transition)
 
         return normed_buffer
+
+    def get_cycle_count(self):
+        if self.total_appends < self.max_size:
+            return 0
+        return (self.total_appends - self.max_size) // self.max_size + 1
+
+    def did_cycle_occur(self):
+        return self.total_appends > 0 and self.total_appends % self.max_size == 0
