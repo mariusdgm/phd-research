@@ -50,11 +50,17 @@ def make_env(rows, cols, start_state, p_success, terminal_states, seed, walls=No
         terminal_states=terminal_states,
         seed=seed,
         rewards={
-            "valid_move": 0,
-            "wall_collision": 0,
-            "out_of_bounds": 0,
+            "valid_move": -0.1,
+            "wall_collision": -1,
+            "out_of_bounds": -1,
             "default": 0.0,
         },
+        # rewards={
+        #     "valid_move": 0,
+        #     "wall_collision": 0,
+        #     "out_of_bounds": 0,
+        #     "default": 0.0,
+        # },
     )
 
 

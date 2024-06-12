@@ -1,3 +1,4 @@
+import os
 from collections import deque
 import numpy as np
 import random
@@ -56,6 +57,7 @@ class ReplayBuffer:
         return states, actions, rewards, next_states, dones
 
     def save(self, file_name):
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
         with open(file_name, "wb") as f:
             pickle.dump((self.buffer, self.total_appends), f)
 

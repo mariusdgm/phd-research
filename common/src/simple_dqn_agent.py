@@ -68,6 +68,7 @@ class AgentDQN:
         experiment_name=None,
         resume_training_path=None,
         save_checkpoints=True,
+        save_replay_buffer_cycles=True,
         logger=None,
         config={},
     ) -> None:
@@ -95,6 +96,7 @@ class AgentDQN:
         self.validation_env = validation_env
 
         self.save_checkpoints = save_checkpoints
+        self.save_replay_buffer_cycles = save_replay_buffer_cycles
         self.logger = logger
         self.tensor_board_writer = None
 
@@ -589,6 +591,14 @@ class AgentDQN:
                 self.train_s, action, reward, s_prime, is_terminated
             )
 
+            if self.save_replay_buffer_cycles:
+                if self.replay_buffer.did_cycle_occur():
+                    replay_buffer_cycles = self.replay_buffer.get_cycle_count()
+                    replay_buffer_save_file_name = (
+                        f"{self.replay_buffer_file}_{replay_buffer_cycles}"
+                    )
+                    self.replay_buffer.save(replay_buffer_save_file_name)
+
             self.max_qs.append(max_q)
 
             # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
@@ -701,6 +711,7 @@ class AgentDQN:
         stats = {}
 
         stats["frame_stamp"] = self.t
+        stats["epsilon_greedy"] = self.epsilon_by_frame(self.t)
 
         stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
         stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
