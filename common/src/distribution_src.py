@@ -40,7 +40,16 @@ import networkx as nx
 import logging
 
 
-def make_env(rows, cols, start_state, p_success, terminal_states, seed, walls=None):
+def make_env(
+    rows,
+    cols,
+    start_state,
+    p_success,
+    terminal_states,
+    seed,
+    walls=None,
+    episode_length_limit=None,
+):
     return GridWorld(
         rows=rows,
         cols=cols,
@@ -50,17 +59,12 @@ def make_env(rows, cols, start_state, p_success, terminal_states, seed, walls=No
         terminal_states=terminal_states,
         seed=seed,
         rewards={
-            "valid_move": -0.1,
-            "wall_collision": -1,
-            "out_of_bounds": -1,
+            "valid_move": 0,
+            "wall_collision": 0,
+            "out_of_bounds": 0,
             "default": 0.0,
         },
-        # rewards={
-        #     "valid_move": 0,
-        #     "wall_collision": 0,
-        #     "out_of_bounds": 0,
-        #     "default": 0.0,
-        # },
+        episode_length_limit=episode_length_limit,
     )
 
 
@@ -902,10 +906,12 @@ def run_dqn_distribution_correction_experiment(
         normalized_rb = agent.replay_buffer.normalize_replay_buffer()
         normalized_rb_entropy = normalized_rb.calculate_buffer_entropy()
 
-        examples = [(transition[0], transition[1]) for transition in agent.replay_buffer.buffer]
+        examples = [
+            (transition[0], transition[1]) for transition in agent.replay_buffer.buffer
+        ]
         example_strings = [f"{state}_{action}" for state, action in examples]
         unique_examples, counts = np.unique(example_strings, return_counts=True)
-        
+
         experiment_data.append(
             {
                 "epoch": i,
@@ -931,14 +937,29 @@ def setup_dqn_agent(
     p_success = config["p_success"]
     terminal_states = config["terminal_states"]
     run_id = config["run_id"]
+    episode_length_limit = config.get("episode_length_limit")
 
     if config["algorithm"] == "dataset_normed":
         config["normalize_replay_buffer_freq"] = True
 
     ### Setup environments ###
-    train_env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    train_env = make_env(
+        rows,
+        cols,
+        start_state,
+        p_success,
+        terminal_states,
+        run_id,
+        episode_length_limit=episode_length_limit,
+    )
     validation_env = make_env(
-        rows, cols, start_state, p_success, terminal_states, run_id
+        rows,
+        cols,
+        start_state,
+        p_success,
+        terminal_states,
+        run_id,
+        episode_length_limit=episode_length_limit,
     )
 
     ### Setup output and loading paths ###

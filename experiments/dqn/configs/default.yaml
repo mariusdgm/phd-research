@@ -6,9 +6,10 @@ terminal_states:
   "(8, 8)": 1.0
 rows: 10 
 cols: 10
+episode_length_limit: 400
 p_success: 1
 num_steps: 40_000
-train_max_iterations: 40
+train_max_iterations: 30
 neural_fit_mode: "max"
 algorithm: "default"
 
@@ -16,12 +17,12 @@ agent_params:
   agent: AgentDQN
   args_:
     gamma: 0.9
-    train_step_cnt: 500
+    train_step_cnt: 2_000
     validation_enabled: False
-    validation_step_cnt: 250
+    validation_step_cnt: 500
     validation_epsilon: 0.001
     
-    replay_start_size: 500
+    replay_start_size: 1_000
     
     batch_size: 32
     training_freq: 4
@@ -31,7 +32,7 @@ agent_params:
     epsilon:
       start: 1.0
       end: 0.01
-      decay: 10_000 # train_max_iterations * train_step_cnt * 0.33
+      decay: 20_000 # train_max_iterations * train_step_cnt * 0.33
  
 optim:
   name: Adam
