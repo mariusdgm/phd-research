@@ -51,7 +51,10 @@ def run(opts: Namespace) -> None:
         f"Starting experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
 
-    # TODO: implement dqn experiment with parametrization
+    logger.info(
+        f"Config dict is {opts_dict}"
+    )
+
     experiment_data = run_dqn_distribution_correction_experiment(
         config=opts_dict,
         logger=logger,

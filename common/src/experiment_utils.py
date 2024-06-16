@@ -19,6 +19,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from rl_envs_forge.envs.grid_world.grid_world import GridWorld
+
 # from overfitting.src.utils import extract_V_from_Q, create_random_policy
 
 import random
@@ -57,6 +58,7 @@ def setup_logger(name, log_file=None, level=logging.INFO):
 
     return logger
 
+
 def cleanup_file_handlers(experiment_logger=None):
     """Cleans up all handlers of experiment_logger logger instance.
 
@@ -69,13 +71,12 @@ def cleanup_file_handlers(experiment_logger=None):
         for handler in experiment_logger.handlers:
             handler.close()
             experiment_logger.removeHandler(handler)
-    
+
     else:
         logger = logging.getLogger()
         for handler in logger.handlers:
             handler.close()
             logger.removeHandler(handler)
-        
 
 
 def run_cli_command(command: List[str], cwd: str) -> subprocess.CompletedProcess:
@@ -131,11 +132,11 @@ def seed_everything(seed):
 
 def is_tuple_string(s):
     try:
-        # Use ast.literal_eval to safely evaluate if the string is a tuple
         evaluated = ast.literal_eval(s)
         return isinstance(evaluated, tuple)
     except:
         return False
+
 
 def convert_tuple_string_to_tuple(key):
     try:
@@ -143,13 +144,42 @@ def convert_tuple_string_to_tuple(key):
     except (ValueError, SyntaxError):
         return key
 
+
+def convert_list_of_tuples(list_of_strings):
+    return [
+        (
+            convert_tuple_string_to_tuple(item)
+            if isinstance(item, str) and is_tuple_string(item)
+            else item
+        )
+        for item in list_of_strings
+    ]
+
+
 def namespace_to_dict(namespace):
     if isinstance(namespace, Namespace):
-        return {key: namespace_to_dict(value) for key, value in vars(namespace).items()}
+        return {
+            convert_tuple_string_to_tuple(key): namespace_to_dict(value)
+            for key, value in vars(namespace).items()
+        }
     elif isinstance(namespace, list):
-        return [namespace_to_dict(item) for item in namespace]
+        return [
+            (
+                namespace_to_dict(item)
+                if not isinstance(item, str)
+                else (
+                    convert_tuple_string_to_tuple(item)
+                    if is_tuple_string(item)
+                    else convert_list_of_tuples(namespace)
+                )
+            )
+            for item in namespace
+        ]
     elif isinstance(namespace, dict):
-        return {convert_tuple_string_to_tuple(key): namespace_to_dict(value) for key, value in namespace.items()}
+        return {
+            convert_tuple_string_to_tuple(key): namespace_to_dict(value)
+            for key, value in namespace.items()
+        }
     elif isinstance(namespace, str) and is_tuple_string(namespace):
         return ast.literal_eval(namespace)
     else:

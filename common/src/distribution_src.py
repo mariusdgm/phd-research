@@ -884,6 +884,8 @@ def run_dqn_distribution_correction_experiment(
         config=config,
         logger=logger,
     )
+    
+    logger.info(f"Agent parametrization: {agent.get_settings()}")
 
     transitions_list = [
         (key[0], key[1], *value[0]) for key, value in agent.train_env.mdp.items()
@@ -938,6 +940,7 @@ def setup_dqn_agent(
     terminal_states = config["terminal_states"]
     run_id = config["run_id"]
     episode_length_limit = config.get("episode_length_limit")
+    walls = set(config["walls"]) if config.get("walls") else None
 
     if config["algorithm"] == "dataset_normed":
         config["normalize_replay_buffer_freq"] = True
@@ -950,6 +953,7 @@ def setup_dqn_agent(
         p_success,
         terminal_states,
         run_id,
+        walls=walls,
         episode_length_limit=episode_length_limit,
     )
     validation_env = make_env(

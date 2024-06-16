@@ -1,2 +1,2 @@
-# algorithm: ["default", "dataset_normed"]
-algorithm: ["default"]
+algorithm: ["default", "dataset_normed"]
+# algorithm: ["default"]

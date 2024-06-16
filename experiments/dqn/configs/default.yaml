@@ -1,11 +1,12 @@
 experiment: "experiment_distributions"
 
 seed: null
-start_state: (1, 1)
+start_state: (8, 1)
 terminal_states:
-  "(8, 8)": 1.0
+  "(8, 9)": 1.0
 rows: 10 
-cols: 10
+cols: 11
+walls: ['(5, 5)', '(6, 5)', '(9, 5)', '(4, 5)', '(0, 5)', '(7, 5)', '(2, 5)', '(8, 5)', '(3, 5)']
 episode_length_limit: 400
 p_success: 1
 num_steps: 40_000

@@ -38,7 +38,9 @@ def replace_keys(d, original_key, new_key):
     """
     Recursively iterates through a dictionary and its sub-dictionaries,
     replacing a specified key with a new key.
-    """
+Starting training epoch at t = 0
+2024-06-14 14:58:27,941 - 2024Jun14-145252_configs_algorithm=default - INFO - Episode 0 terminated at frame 399 with reward 0
+2024-06-14 14:58:27,953 - 2024Jun14-145252_configs_a    """
     new_dict = {}
     for key, value in d.items():
         # Replace the key if it matches the specified original key
@@ -103,10 +105,7 @@ class AgentDQN:
         # set up path names
         self.experiment_output_folder = experiment_output_folder
         self.experiment_name = experiment_name
-        self.normalize_replay_buffer_freq = config.get(
-            "normalize_replay_buffer_freq", False
-        )
-
+        
         self.model_file_folder = (
             "model_checkpoints"  # models will be saved at each epoch
         )
@@ -127,6 +126,10 @@ class AgentDQN:
         self._load_config_settings(self.config)
         self._init_models(self.config)  # init policy, target and optim
 
+        self.normalize_replay_buffer_freq = config.get(
+            "normalize_replay_buffer_freq", False
+        )
+        
         # Set initial values related to training and monitoring
         self.t = 0  # frame nr
         self.episodes = 0  # episode nr
@@ -901,6 +904,58 @@ class AgentDQN:
         self.optimizer.step()
 
         return loss.item()
+    
+    def get_settings(self):
+        """
+        Returns the settings of the agent and the environments.
+
+        Returns:
+            dict: A dictionary containing the agent settings and environment settings.
+        """
+        agent_settings = {
+            'train_step_cnt': self.train_step_cnt,
+            'validation_enabled': self.validation_enabled,
+            'validation_step_cnt': self.validation_step_cnt,
+            'validation_epsilon': self.validation_epsilon,
+            'replay_start_size': self.replay_start_size,
+            'batch_size': self.batch_size,
+            'training_freq': self.training_freq,
+            'target_model_update_freq': self.target_model_update_freq,
+            'gamma': self.gamma,
+            'loss_function': self.loss_function,
+            'epsilon_start': self.epsilon_by_frame(0),
+            'epsilon_end': self.epsilon_by_frame(self.train_step_cnt),
+            'epsilon_decay': self.config.get("agent_params", {}).get("args", {}).get("epsilon", {}).get("decay"),
+            'replay_buffer_size': self.replay_buffer.max_size,
+            'replay_buffer_action_dim': self.replay_buffer.action_dim,
+            'replay_buffer_n_step': self.replay_buffer.n_step,
+            'optimizer': str(self.optimizer),
+            'policy_model': str(self.policy_model),
+            'target_model': str(self.target_model),
+        }
+
+        env_settings = {
+            'train_env': {
+                'rows': self.train_env.rows,
+                'cols': self.train_env.cols,
+                'start_state': self.train_env.start_state,
+                'terminal_states': self.train_env.terminal_states,
+                'walls': self.train_env.walls,
+                'p_success': self.train_env.p_success,
+                'episode_length_limit': self.train_env.episode_length_limit,
+            },
+            'validation_env': {
+                'rows': self.validation_env.rows,
+                'cols': self.validation_env.cols,
+                'start_state': self.validation_env.start_state,
+                'terminal_states': self.validation_env.terminal_states,
+                'walls': self.validation_env.walls,
+                'p_success': self.validation_env.p_success,
+                'episode_length_limit': self.validation_env.episode_length_limit,
+            }
+        }
+
+        return {'agent_settings': agent_settings, 'env_settings': env_settings}
 
 
 def main():
