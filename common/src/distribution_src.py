@@ -37,7 +37,31 @@ from torch.optim.lr_scheduler import LinearLR
 
 import networkx as nx
 
+import gymnasium as gym
+
 import logging
+
+
+class StandardizeWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super(StandardizeWrapper, self).__init__(env)
+        self.rows = env.rows
+        self.cols = env.cols
+
+    def standardize_state(self, state):
+        """Standardize state to the range [-1, 1] based on the environment's rows and cols."""
+        row, col = state
+        standardized_row = 2 * (row / (self.rows - 1)) - 1
+        standardized_col = 2 * (col / (self.cols - 1)) - 1
+        return standardized_row, standardized_col
+
+    def reset(self, **kwargs):
+        state = self.env.reset(**kwargs)
+        return self.standardize_state(state)
+
+    def step(self, action):
+        state, reward, done, truncated, info = self.env.step(action)
+        return self.standardize_state(state), reward, done, truncated, info
 
 
 def make_env(
@@ -50,7 +74,7 @@ def make_env(
     walls=None,
     episode_length_limit=None,
 ):
-    return GridWorld(
+    env = GridWorld(
         rows=rows,
         cols=cols,
         start_state=start_state,
@@ -66,6 +90,7 @@ def make_env(
         },
         episode_length_limit=episode_length_limit,
     )
+    return StandardizeWrapper(env)
 
 
 def randomize_walls_positions(
@@ -884,7 +909,7 @@ def run_dqn_distribution_correction_experiment(
         config=config,
         logger=logger,
     )
-    
+
     logger.info(f"Agent parametrization: {agent.get_settings()}")
 
     transitions_list = [

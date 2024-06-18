@@ -6,7 +6,7 @@ import numpy as np
 import os
 from pathlib import Path
 from typing import List, Dict
-
+import warnings
 
 import torch.optim as optim
 import torch.nn.functional as F
@@ -159,9 +159,6 @@ class AgentDQN:
         - Model weights file (found as the last checkpoint in the models subfolder)
         Args:
             resume_training_path (str): path to where the files needed to resume training can be found
-
-        Raises:
-            FileNotFoundError: Raised if a required file was not found.
         """
 
         ### build the file paths
@@ -177,7 +174,7 @@ class AgentDQN:
         # check that the file paths exist
         for file in resume_files:
             if not os.path.exists(resume_files[file]):
-                self.logger.info(
+                warnings.warn(
                     f"Could not find the file {resume_files[file]} for {file} either because a wrong path was given, or because no training was done for this experiment."
                 )
                 return False
@@ -192,9 +189,10 @@ class AgentDQN:
             resume_training_path, epoch_cnt
         )
         if not os.path.exists(resume_files["checkpoint_model_file"]):
-            raise FileNotFoundError(
-                f"Could not find the file {resume_files['checkpoint_model_file']} for 'checkpoint_model_file'."
+            warnings.warn(
+                f"Could not find the file {resume_files['checkpoint_model_file']} for 'checkpoint_model_file'. Skipping model loading."
             )
+            return False
 
         self.load_models(resume_files["checkpoint_model_file"])
 
@@ -348,7 +346,7 @@ class AgentDQN:
         self.validation_stats = checkpoint["validation_stats"]
 
     def save_checkpoint(
-        self, save_models=False, save_training_status=True, save_buffer=False
+        self, save_models=True, save_training_status=True, save_buffer=True
     ):
         self.logger.info(f"Saving checkpoint at t = {self.t} ...")
         if save_models:
@@ -875,9 +873,10 @@ class AgentDQN:
         states, actions, rewards, next_states, dones = sample
 
         states = torch.stack(states, dim=0)
+        next_states = torch.stack(next_states, dim=0)
+        
         actions = torch.LongTensor(actions).unsqueeze(1)
         rewards = torch.Tensor(rewards).unsqueeze(1)
-        next_states = torch.stack(next_states, dim=0)
         dones = torch.Tensor(dones).unsqueeze(1).type(torch.bool)
 
         self.policy_model.train()
