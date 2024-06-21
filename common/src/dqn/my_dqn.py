@@ -244,7 +244,6 @@ class AgentDQN:
         self.replay_buffer = ReplayBuffer(
             max_size=buffer_settings.get("max_size", 100_000),
             state_dim=self.in_features,
-            action_dim=buffer_settings.get("action_dim", 1),
             n_step=buffer_settings.get("n_step", 0),
         )
 

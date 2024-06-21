@@ -15,7 +15,7 @@ import torch.nn as nn
 
 import gym
 
-from .replay_buffer import ReplayBuffer
+from .replay_buffer import ReplayBuffer, UniqueReplayBuffer
 from common.src.experiment_utils import seed_everything
 
 from common.src.models import QNET
@@ -36,11 +36,11 @@ from common.src.models import QNET
 
 def replace_keys(d, original_key, new_key):
     """
-    Recursively iterates through a dictionary and its sub-dictionaries,
-    replacing a specified key with a new key.
-Starting training epoch at t = 0
-2024-06-14 14:58:27,941 - 2024Jun14-145252_configs_algorithm=default - INFO - Episode 0 terminated at frame 399 with reward 0
-2024-06-14 14:58:27,953 - 2024Jun14-145252_configs_a    """
+        Recursively iterates through a dictionary and its sub-dictionaries,
+        replacing a specified key with a new key.
+    Starting training epoch at t = 0
+    2024-06-14 14:58:27,941 - 2024Jun14-145252_configs_algorithm=default - INFO - Episode 0 terminated at frame 399 with reward 0
+    2024-06-14 14:58:27,953 - 2024Jun14-145252_configs_a"""
     new_dict = {}
     for key, value in d.items():
         # Replace the key if it matches the specified original key
@@ -105,7 +105,7 @@ class AgentDQN:
         # set up path names
         self.experiment_output_folder = experiment_output_folder
         self.experiment_name = experiment_name
-        
+
         self.model_file_folder = (
             "model_checkpoints"  # models will be saved at each epoch
         )
@@ -129,7 +129,7 @@ class AgentDQN:
         self.normalize_replay_buffer_freq = config.get(
             "normalize_replay_buffer_freq", False
         )
-        
+
         # Set initial values related to training and monitoring
         self.t = 0  # frame nr
         self.episodes = 0  # episode nr
@@ -234,12 +234,23 @@ class AgentDQN:
         buffer_settings = config.get(
             "replay_buffer",
         )
-        self.replay_buffer = ReplayBuffer(
-            max_size=buffer_settings.get("max_size"),
-            state_dim=self.in_features,
-            action_dim=buffer_settings.get("action_dim"),
-            n_step=buffer_settings.get("n_step"),
-        )
+        buffer_type = buffer_settings.get("type")
+        if buffer_type is None or buffer_type == "ReplayBuffer":
+            self.replay_buffer = ReplayBuffer(
+                max_size=buffer_settings.get("max_size"),
+                state_dim=self.in_features,
+                n_step=buffer_settings.get("n_step"),
+            )
+        elif buffer_type == "UniqueReplayBuffer":
+            self.replay_buffer = UniqueReplayBuffer(
+                max_size=buffer_settings.get("max_size"),
+                state_dim=self.in_features,
+                n_step=buffer_settings.get("n_step"),
+            )
+        else:
+            raise ValueError(
+                f"The following buffer type was provided: {buffer_type}, please choose between ReplayBuffer and UniqueReplayBuffer"
+            )
 
         self.logger.info("Loaded configuration settings.")
 
@@ -874,7 +885,7 @@ class AgentDQN:
 
         states = torch.stack(states, dim=0)
         next_states = torch.stack(next_states, dim=0)
-        
+
         actions = torch.LongTensor(actions).unsqueeze(1)
         rewards = torch.Tensor(rewards).unsqueeze(1)
         dones = torch.Tensor(dones).unsqueeze(1).type(torch.bool)
@@ -903,7 +914,7 @@ class AgentDQN:
         self.optimizer.step()
 
         return loss.item()
-    
+
     def get_settings(self):
         """
         Returns the settings of the agent and the environments.
@@ -911,50 +922,53 @@ class AgentDQN:
         Returns:
             dict: A dictionary containing the agent settings and environment settings.
         """
-        agent_settings = {
-            'train_step_cnt': self.train_step_cnt,
-            'validation_enabled': self.validation_enabled,
-            'validation_step_cnt': self.validation_step_cnt,
-            'validation_epsilon': self.validation_epsilon,
-            'replay_start_size': self.replay_start_size,
-            'batch_size': self.batch_size,
-            'training_freq': self.training_freq,
-            'target_model_update_freq': self.target_model_update_freq,
-            'gamma': self.gamma,
-            'loss_function': self.loss_function,
-            'epsilon_start': self.epsilon_by_frame(0),
-            'epsilon_end': self.epsilon_by_frame(self.train_step_cnt),
-            'epsilon_decay': self.config.get("agent_params", {}).get("args", {}).get("epsilon", {}).get("decay"),
-            'replay_buffer_size': self.replay_buffer.max_size,
-            'replay_buffer_action_dim': self.replay_buffer.action_dim,
-            'replay_buffer_n_step': self.replay_buffer.n_step,
-            'optimizer': str(self.optimizer),
-            'policy_model': str(self.policy_model),
-            'target_model': str(self.target_model),
-        }
+        # Extract agent settings dynamically
+        agent_settings = vars(self).copy()
+
+        # Remove any unwanted attributes that are not part of the settings
+        keys_to_remove = [
+            "train_env",
+            "validation_env",
+            "replay_buffer",
+            "logger",
+            "tensor_board_writer",
+            "config",
+        ]
+        for key in keys_to_remove:
+            agent_settings.pop(key, None)
+
+        # Include epsilon values separately
+        agent_settings["epsilon_start"] = self.epsilon_by_frame(0)
+        agent_settings["epsilon_end"] = self.epsilon_by_frame(self.train_step_cnt)
+        agent_settings["epsilon_decay"] = (
+            self.config.get("agent_params", {})
+            .get("args", {})
+            .get("epsilon", {})
+            .get("decay")
+        )
+
+        # Extract train environment settings dynamically
+        train_env_settings = vars(self.train_env).copy()
+        train_env_settings["class"] = self.train_env.__class__.__name__
+
+        # Extract validation environment settings dynamically
+        validation_env_settings = vars(self.validation_env).copy()
+        validation_env_settings["class"] = self.validation_env.__class__.__name__
 
         env_settings = {
-            'train_env': {
-                'rows': self.train_env.rows,
-                'cols': self.train_env.cols,
-                'start_state': self.train_env.start_state,
-                'terminal_states': self.train_env.terminal_states,
-                'walls': self.train_env.walls,
-                'p_success': self.train_env.p_success,
-                'episode_length_limit': self.train_env.episode_length_limit,
-            },
-            'validation_env': {
-                'rows': self.validation_env.rows,
-                'cols': self.validation_env.cols,
-                'start_state': self.validation_env.start_state,
-                'terminal_states': self.validation_env.terminal_states,
-                'walls': self.validation_env.walls,
-                'p_success': self.validation_env.p_success,
-                'episode_length_limit': self.validation_env.episode_length_limit,
-            }
+            "train_env": train_env_settings,
+            "validation_env": validation_env_settings,
         }
 
-        return {'agent_settings': agent_settings, 'env_settings': env_settings}
+        # Extract replay buffer settings dynamically
+        replay_buffer_settings = vars(self.replay_buffer).copy()
+        replay_buffer_settings["class"] = self.replay_buffer.__class__.__name__
+
+        return {
+            "agent_settings": agent_settings,
+            "env_settings": env_settings,
+            "replay_buffer_settings": replay_buffer_settings,
+        }
 
 
 def main():

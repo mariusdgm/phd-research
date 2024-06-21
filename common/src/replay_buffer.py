@@ -4,14 +4,13 @@ import numpy as np
 import random
 import pickle
 from scipy.stats import entropy
-from .frequency_normalization import normalize_frequencies
+from .frequency_normalization import normalize_frequencies, transform_to_hashable_type
 
 
 class ReplayBuffer:
-    def __init__(self, max_size, state_dim, action_dim, n_step):
+    def __init__(self, max_size, state_dim, n_step):
         self.max_size = max_size
         self.state_dim = state_dim
-        self.action_dim = action_dim
         self.n_step = n_step
         self.buffer = deque(maxlen=self.max_size)
         self.total_appends = 0  # Total number of elements added
@@ -81,7 +80,7 @@ class ReplayBuffer:
         normalized_transitions = normalize_frequencies(transitions)
 
         normed_buffer = ReplayBuffer(
-            self.max_size, self.state_dim, self.action_dim, self.n_step
+            self.max_size, self.state_dim, self.n_step
         )
         for transition in normalized_transitions:
             normed_buffer.append(*transition)
@@ -95,3 +94,46 @@ class ReplayBuffer:
 
     def did_cycle_occur(self):
         return self.total_appends > 0 and self.total_appends % self.max_size == 0
+
+class UniqueReplayBuffer(ReplayBuffer):
+    def __init__(self, max_size, state_dim, n_step):
+        super().__init__(max_size, state_dim, n_step)
+        self.unique_transitions = set()
+
+    def append(self, state, action, reward, next_state, done):
+        transition = (state, action, reward, next_state, done)
+        hashable_transition = tuple(transform_to_hashable_type(elem) for elem in transition)
+
+        if hashable_transition not in self.unique_transitions:
+            if len(self.buffer) >= self.max_size:
+                oldest_transition = self.buffer.popleft()
+                oldest_hashable = tuple(transform_to_hashable_type(elem) for elem in oldest_transition)
+                self.unique_transitions.remove(oldest_hashable)
+
+            self.buffer.append(transition)
+            self.unique_transitions.add(hashable_transition)
+            self.total_appends += 1
+
+    def load(self, file_name):
+        with open(file_name, "rb") as f:
+            self.buffer, self.total_appends = pickle.load(f)
+        self.unique_transitions = set(
+            tuple(transform_to_hashable_type(elem) for elem in transition) for transition in self.buffer
+        )
+
+    def save(self, file_name):
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
+        with open(file_name, "wb") as f:
+            pickle.dump((self.buffer, self.total_appends), f)
+
+    def normalize_replay_buffer(self):
+        transitions = list(self.buffer)
+        normalized_transitions = normalize_frequencies(transitions)
+
+        normed_buffer = UniqueReplayBuffer(
+            self.max_size, self.state_dim, self.n_step
+        )
+        for transition in normalized_transitions:
+            normed_buffer.append(*transition)
+
+        return normed_buffer
