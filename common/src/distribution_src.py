@@ -1015,6 +1015,7 @@ def setup_dqn_agent(
     run_id = config["run_id"]
     episode_length_limit = config.get("episode_length_limit")
     walls = set(config["walls"]) if config.get("walls") else None
+    randomize_walls_positions = config.get("randomize_walls_positions")
 
     if config["algorithm"] == "dataset_normed":
         config["normalize_replay_buffer_freq"] = True
@@ -1029,6 +1030,7 @@ def setup_dqn_agent(
         run_id,
         walls=walls,
         episode_length_limit=episode_length_limit,
+        randomize_starting_position=randomize_walls_positions
     )
     validation_env = make_env(
         rows,
@@ -1038,6 +1040,7 @@ def setup_dqn_agent(
         terminal_states,
         run_id,
         episode_length_limit=episode_length_limit,
+        randomize_starting_position=randomize_walls_positions
     )
 
     ### Setup output and loading paths ###

@@ -4,6 +4,7 @@ import torch
 import random
 import numpy as np
 import os
+import pickle
 from pathlib import Path
 from typing import List, Dict
 import warnings
@@ -101,6 +102,7 @@ class AgentDQN:
         self.save_replay_buffer_cycles = save_replay_buffer_cycles
         self.logger = logger
         self.tensor_board_writer = None
+        self.start_state_counts = {}
 
         # set up path names
         self.experiment_output_folder = experiment_output_folder
@@ -195,6 +197,15 @@ class AgentDQN:
             return False
 
         self.load_models(resume_files["checkpoint_model_file"])
+
+        start_state_counts_file = os.path.join(
+            resume_training_path, f"{self.experiment_name}_start_state_counts.pkl"
+        )
+        if os.path.exists(start_state_counts_file):
+            with open(start_state_counts_file, "rb") as f:
+                self.start_state_counts = pickle.load(f)
+        else:
+            self.start_state_counts = {}
 
         self.logger.info(
             f"Loaded previous training status from the following files: {str(resume_files)}"
@@ -357,7 +368,11 @@ class AgentDQN:
         self.validation_stats = checkpoint["validation_stats"]
 
     def save_checkpoint(
-        self, save_models=True, save_training_status=True, save_buffer=True
+        self,
+        save_models=True,
+        save_training_status=True,
+        save_buffer=True,
+        save_start_state_counts=True,
     ):
         self.logger.info(f"Saving checkpoint at t = {self.t} ...")
         if save_models:
@@ -366,6 +381,15 @@ class AgentDQN:
             self.save_training_status()
         if save_buffer:
             self.replay_buffer.save(self.replay_buffer_file)
+
+        if save_start_state_counts:
+            start_state_counts_file = os.path.join(
+                self.experiment_output_folder,
+                f"{self.experiment_name}_start_state_counts.pkl",
+            )
+            with open(start_state_counts_file, "wb") as f:
+                pickle.dump(self.start_state_counts, f)
+
         self.logger.info(f"Checkpoint saved at t = {self.t}")
 
     def save_model(self):
@@ -674,6 +698,11 @@ class AgentDQN:
 
         self.train_s = self.train_env.reset()
         self.train_s = torch.tensor(self.train_s, device=device).float()
+
+        hashable_state = tuple(self.train_s.cpu().numpy())
+        if hashable_state not in self.start_state_counts:
+            self.start_state_counts[hashable_state] = 0
+        self.start_state_counts[hashable_state] += 1
 
     def display_training_epoch_info(self, stats):
         self.logger.info(
