@@ -226,6 +226,7 @@ class AgentDQN:
 
         self.replay_start_size = agent_params.get("replay_start_size")
 
+        self.hidden_size = agent_params.get("hidden_size")
         self.batch_size = agent_params.get("batch_size")
         self.training_freq = agent_params.get("training_freq")
         self.target_model_update_freq = agent_params.get("target_model_update_freq")
@@ -300,8 +301,6 @@ class AgentDQN:
             ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
-        estimator_settings = config.get("estimator")
-
         env = self.train_env
         states = list(set([s for s, _ in env.mdp.keys()]))
         actions = list(set([a for _, a in env.mdp.keys()]))
@@ -312,14 +311,8 @@ class AgentDQN:
         )  # Or another way to represent the size of your input
         output_size = len(actions)
 
-        self.policy_model = QNET(
-            input_size,
-            output_size,
-        )
-        self.target_model = QNET(
-            input_size,
-            output_size,
-        )
+        self.policy_model = QNET(input_size, output_size, hidden_size=self.hidden_size)
+        self.target_model = QNET(input_size, output_size, hidden_size=self.hidden_size)
 
         optimizer_settings = config.get("optim")
         self.optimizer = optim.Adam(

@@ -79,13 +79,13 @@ def random_select_starting_pos(prob_A, space_A, space_B):
     """
     if not (0 <= prob_A <= 1):
         raise ValueError("prob_A should be between 0 and 1.")
-    
+
     top_left_A, bottom_right_A = space_A
     top_left_B, bottom_right_B = space_B
-    
+
     # Randomly select between A and B
     is_A = np.random.binomial(1, prob_A)
-    
+
     if is_A:
         # Select random coordinates from space A
         x = np.random.randint(top_left_A[0], bottom_right_A[0] + 1)
@@ -94,8 +94,9 @@ def random_select_starting_pos(prob_A, space_A, space_B):
         # Select random coordinates from space B
         x = np.random.randint(top_left_B[0], bottom_right_B[0] + 1)
         y = np.random.randint(top_left_B[1], bottom_right_B[1] + 1)
-    
+
     return (x, y)
+
 
 class RandomStartStateWrapper(gym.Wrapper):
     def __init__(self, env):
@@ -103,13 +104,18 @@ class RandomStartStateWrapper(gym.Wrapper):
         self.prob_A = 0.1
         self.space_A = ((0, 0), (7, 3))
         self.space_B = ((0, 5), (3, 8))
-        self.env.start_state = random_select_starting_pos(self.prob_A, self.space_A, self.space_B)
+        self.env.start_state = random_select_starting_pos(
+            self.prob_A, self.space_A, self.space_B
+        )
         self.env.reset(new_start_state=self.env.start_state)
 
     def reset(self, **kwargs):
-        new_start_state = random_select_starting_pos(self.prob_A, self.space_A, self.space_B)
+        new_start_state = random_select_starting_pos(
+            self.prob_A, self.space_A, self.space_B
+        )
         return self.env.reset(new_start_state=new_start_state)
-    
+
+
 def make_env(
     rows,
     cols,
@@ -119,7 +125,7 @@ def make_env(
     seed,
     walls=None,
     episode_length_limit=None,
-    randomize_starting_position=None
+    randomize_starting_position=None,
 ):
     env = GridWorld(
         rows=rows,
@@ -1015,7 +1021,7 @@ def setup_dqn_agent(
     run_id = config["run_id"]
     episode_length_limit = config.get("episode_length_limit")
     walls = set(config["walls"]) if config.get("walls") else None
-    randomize_walls_positions = config.get("randomize_walls_positions")
+    randomize_starting_position = config.get("randomize_starting_position")
 
     if config["algorithm"] == "dataset_normed":
         config["normalize_replay_buffer_freq"] = True
@@ -1030,7 +1036,7 @@ def setup_dqn_agent(
         run_id,
         walls=walls,
         episode_length_limit=episode_length_limit,
-        randomize_starting_position=randomize_walls_positions
+        randomize_starting_position=randomize_starting_position,
     )
     validation_env = make_env(
         rows,
@@ -1040,7 +1046,7 @@ def setup_dqn_agent(
         terminal_states,
         run_id,
         episode_length_limit=episode_length_limit,
-        randomize_starting_position=randomize_walls_positions
+        randomize_starting_position=randomize_starting_position,
     )
 
     ### Setup output and loading paths ###

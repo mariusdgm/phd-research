@@ -6,14 +6,14 @@ terminal_states:
   "(6, 7)": 1.0
 rows: 10 
 cols: 11
-walls: ['(4, 4)','(7, 4)','(2, 4)','(0, 4)','(3, 4)','(8, 4)','(5, 4)','(6, 4)','(9, 4)']
+# walls: ['(4, 4)','(7, 4)','(2, 4)','(0, 4)','(3, 4)','(8, 4)','(5, 4)','(6, 4)','(9, 4)']
 episode_length_limit: 2000
 p_success: 1
 num_steps: 40_000
 train_max_iterations: 60
 neural_fit_mode: "max"
 algorithm: "default"
-randomize_starting_position: True
+randomize_starting_position: False
 
 agent_params:
   agent: AgentDQN
@@ -26,6 +26,7 @@ agent_params:
     
     replay_start_size: 1_000
     
+    hidden_size: 128
     batch_size: 32
     training_freq: 4
     target_model_update_freq: 50
