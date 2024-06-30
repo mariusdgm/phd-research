@@ -99,9 +99,9 @@ def random_select_starting_pos(prob_A, space_A, space_B):
 
 
 class RandomStartStateWrapper(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env, prob=0.1):
         super(RandomStartStateWrapper, self).__init__(env)
-        self.prob_A = 0.1
+        self.prob_A = prob
         self.space_A = ((0, 0), (7, 3))
         self.space_B = ((0, 5), (3, 8))
         self.env.start_state = random_select_starting_pos(

@@ -547,6 +547,7 @@ class AgentDQN:
         while epoch_t < self.train_step_cnt:
             (
                 is_terminated,
+                truncated,
                 epoch_t,
                 current_episode_reward,
                 ep_frames,
@@ -559,7 +560,7 @@ class AgentDQN:
             policy_trained_times += ep_policy_trained_times
             target_trained_times += ep_target_trained_times
 
-            if is_terminated:
+            if is_terminated or truncated:
                 # we only want to append these stats if the episode was completed,
                 # otherwise it means it was stopped due to the nr of frames criterion
                 epoch_episode_rewards.append(current_episode_reward)
@@ -601,7 +602,8 @@ class AgentDQN:
         target_trained_times = 0
 
         is_terminated = False
-        while (not is_terminated) and (
+        truncated = False
+        while (not is_terminated) and (not truncated) and (
             epoch_t < train_frames
         ):  # can early stop episode if the frame limit was reached
             action, max_q = self.select_action(self.train_s, self.t, self.num_actions)
@@ -611,9 +613,9 @@ class AgentDQN:
             )
             s_prime = torch.tensor(s_prime, device=device).float()
 
-            if is_terminated:
+            if is_terminated or truncated:
                 self.logger.info(
-                    f"Episode {self.episodes} terminated at frame {epoch_t} with reward {reward}"
+                    f"Episode stopped at t = {self.t} with reward = {reward}. Terminated = {is_terminated}, truncated = {truncated}"
                 )
 
             self.replay_buffer.append(
@@ -673,6 +675,7 @@ class AgentDQN:
         # end of episode, return episode statistics:
         return (
             is_terminated,
+            truncated,
             epoch_t,
             self.current_episode_reward,
             self.ep_frames,
@@ -864,7 +867,8 @@ class AgentDQN:
         s = torch.tensor(s, device=device).float()
 
         is_terminated = False
-        while not is_terminated:
+        truncated = False
+        while (not is_terminated) and (not truncated):  # can early stop episode if the frame limit was reached
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
