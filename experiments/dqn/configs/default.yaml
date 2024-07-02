@@ -3,11 +3,11 @@ experiment: "experiment_distributions"
 seed: null
 start_state: (6, 1)
 terminal_states:
-  "(6, 7)": 1.0
+  "(8, 18)": 1.0
 rows: 10 
-cols: 11
-walls: ['(4, 4)','(7, 4)','(2, 4)','(0, 4)','(3, 4)','(8, 4)','(5, 4)','(6, 4)','(9, 4)']
-episode_length_limit: 100
+cols: 21
+walls: ['(0, 15)', '(2, 15)', '(3, 15)', '(4, 15)', '(5, 15)', '(6, 15)', '(7, 15)', '(8, 15)', '(9, 15)']
+episode_length_limit: 4000
 p_success: 1
 num_steps: 40_000
 train_max_iterations: 60
@@ -19,7 +19,7 @@ agent_params:
   agent: AgentDQN
   args_:
     gamma: 0.9
-    train_step_cnt: 4_000
+    train_step_cnt: 8_000
     validation_enabled: False
     validation_step_cnt: 4_000
     validation_epsilon: 0.001
@@ -35,7 +35,7 @@ agent_params:
     epsilon:
       start: 1.0
       end: 0.01
-      decay: 80_000 # train_max_iterations * train_step_cnt * 0.33
+      decay: 240_000 # train_max_iterations * train_step_cnt * 0.5
  
 optim:
   name: Adam

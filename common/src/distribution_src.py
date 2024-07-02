@@ -63,6 +63,9 @@ class StandardizeWrapper(gym.Wrapper):
         state, reward, done, truncated, info = self.env.step(action)
         return self.standardize_state(state), reward, done, truncated, info
 
+    def render(self, mode="human"):
+        return self.env.render(mode=mode)
+
 
 def random_select_starting_pos(prob_A, space_A, space_B):
     """
@@ -99,11 +102,13 @@ def random_select_starting_pos(prob_A, space_A, space_B):
 
 
 class RandomStartStateWrapper(gym.Wrapper):
-    def __init__(self, env, prob=0.1):
+    def __init__(
+        self, env, prob=0.1, space_A=((0, 0), (9, 14)), space_B=((0, 16), (5, 20))
+    ):
         super(RandomStartStateWrapper, self).__init__(env)
         self.prob_A = prob
-        self.space_A = ((0, 0), (7, 3))
-        self.space_B = ((0, 5), (3, 8))
+        self.space_A = space_A
+        self.space_B = space_B
         self.env.start_state = random_select_starting_pos(
             self.prob_A, self.space_A, self.space_B
         )
@@ -115,6 +120,9 @@ class RandomStartStateWrapper(gym.Wrapper):
         )
         return self.env.reset(new_start_state=new_start_state)
 
+    def render(self, mode="human"):
+        return self.env.render(mode=mode)
+
 
 def make_env(
     rows,
@@ -125,7 +133,13 @@ def make_env(
     seed,
     walls=None,
     episode_length_limit=None,
+    standardize_wrapper=True,
     randomize_starting_position=None,
+    random_stating_positions_parameters={
+        "prob": 0.1,
+        "space_A": ((0, 0), (9, 14)),
+        "space_B": ((0, 16), (5, 20)),
+    },
 ):
     env = GridWorld(
         rows=rows,
@@ -144,8 +158,10 @@ def make_env(
         episode_length_limit=episode_length_limit,
     )
     if randomize_starting_position:
-        env = RandomStartStateWrapper(env)
-    return StandardizeWrapper(env)
+        env = RandomStartStateWrapper(env, **random_stating_positions_parameters)
+    if standardize_wrapper:
+        env = StandardizeWrapper(env)
+    return env
 
 
 def randomize_walls_positions(
@@ -1045,6 +1061,7 @@ def setup_dqn_agent(
         p_success,
         terminal_states,
         run_id,
+        walls=walls,
         episode_length_limit=episode_length_limit,
         randomize_starting_position=randomize_starting_position,
     )
