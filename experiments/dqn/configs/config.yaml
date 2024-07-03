@@ -1,5 +1,12 @@
-# algorithm: ["default", "dataset_normed"]
-algorithm: ["default"]
+agent_params:
+  args_:
+    hidden_size: [16, 32, 64, 128]
 
 replay_buffer:
-  type: ["ReplayBuffer", "UniqueReplayBuffer"]
+  # type: ["ReplayBuffer", "UniqueReplayBuffer"]
+  type: ["UniqueReplayBuffer"]
+
+optim:
+  args_:
+    lr: [0.000021, 0.000046, 0.0001, 0.000215]
+    eps: [0.00003, 0.0001, 0.0003]

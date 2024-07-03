@@ -561,8 +561,8 @@ class AgentDQN:
             target_trained_times += ep_target_trained_times
 
             if is_terminated or truncated:
-                # we only want to append these stats if the episode was completed,
-                # otherwise it means it was stopped due to the nr of frames criterion
+                # we only want to append these stats if the episode ended,
+                # otherwise it means it was stopped due to the nr of frames criterion (internal agent tracker)
                 epoch_episode_rewards.append(current_episode_reward)
                 epoch_episode_nr_frames.append(ep_frames)
                 epoch_losses.extend(ep_losses)

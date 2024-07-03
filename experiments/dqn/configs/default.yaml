@@ -20,8 +20,8 @@ agent_params:
   args_:
     gamma: 0.9
     train_step_cnt: 8_000
-    validation_enabled: False
-    validation_step_cnt: 4_000
+    validation_enabled: True
+    validation_step_cnt: 8_000
     validation_epsilon: 0.001
     
     replay_start_size: 1_000

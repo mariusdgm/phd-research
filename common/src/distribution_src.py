@@ -136,7 +136,7 @@ def make_env(
     standardize_wrapper=True,
     randomize_starting_position=None,
     random_stating_positions_parameters={
-        "prob": 0.1,
+        "prob": 0.9,
         "space_A": ((0, 0), (9, 14)),
         "space_B": ((0, 16), (5, 20)),
     },
