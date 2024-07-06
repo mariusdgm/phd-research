@@ -21,8 +21,6 @@ from common.src.experiment_utils import seed_everything
 
 from common.src.models import QNET
 
-# TODO: fix logging metrics
-
 # Always save: return and number of steps per episode, max q per step of all episodes
 # Interesting info to save:
 # per training episode: sequence of states (frames), actions, Q(s_k, a) for all a, rewards, and perhaps episode length/number of steps to target (dar asta se poate infera)
