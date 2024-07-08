@@ -541,6 +541,9 @@ class AgentDQN:
         epoch_losses = []
         epoch_max_qs = []
 
+        self.policy_model.train()
+        self.target_model.train()
+
         start_time = datetime.datetime.now()
         while epoch_t < self.train_step_cnt:
             (
@@ -601,8 +604,8 @@ class AgentDQN:
 
         is_terminated = False
         truncated = False
-        while (not is_terminated) and (not truncated) and (
-            epoch_t < train_frames
+        while (
+            (not is_terminated) and (not truncated) and (epoch_t < train_frames)
         ):  # can early stop episode if the frame limit was reached
             action, max_q = self.select_action(self.train_s, self.t, self.num_actions)
             action = action.flatten().item()
@@ -791,6 +794,9 @@ class AgentDQN:
         epoch_max_qs = []
         valiation_t = 0
 
+        self.policy_model.eval()
+        self.target_model.eval()
+
         start_time = datetime.datetime.now()
 
         while valiation_t < self.validation_step_cnt:
@@ -866,7 +872,9 @@ class AgentDQN:
 
         is_terminated = False
         truncated = False
-        while (not is_terminated) and (not truncated):  # can early stop episode if the frame limit was reached
+        while (not is_terminated) and (
+            not truncated
+        ):  # can early stop episode if the frame limit was reached
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
@@ -993,6 +1001,27 @@ class AgentDQN:
             "env_settings": env_settings,
             "replay_buffer_settings": replay_buffer_settings,
         }
+        
+    def compute_q_table(self, states, actions):
+        """
+        Compute the Q-table for the given states and actions using the policy model.
+        Args:
+            states (list): List of all possible states.
+            actions (list): List of all possible actions.
+        Returns:
+            dict: A Q-table in the form of a dictionary {state: {action: Q-value}}.
+        """
+        self.policy_model.eval()
+        q_table = {state: {action: 0 for action in actions} for state in states}
+
+        for state in states:
+            state_tensor = torch.tensor(state, device=device).float().unsqueeze(0)
+            with torch.no_grad():
+                q_values = self.policy_model(state_tensor).cpu().numpy().flatten()
+            for idx, action in enumerate(actions):
+                q_table[state][action] = q_values[idx]
+
+        return q_table
 
 
 def main():

@@ -136,7 +136,7 @@ def make_env(
     standardize_wrapper=True,
     randomize_starting_position=None,
     random_stating_positions_parameters={
-        "prob": 0.9,
+        "prob": 0.1,
         "space_A": ((0, 0), (9, 14)),
         "space_B": ((0, 16), (5, 20)),
     },
@@ -1023,10 +1023,7 @@ def run_dqn_distribution_correction_experiment(
     return experiment_data
 
 
-def setup_dqn_agent(
-    config,
-    logger,
-):
+def setup_dqn_agent(config, logger, resume_training_path=None):
     logger.info(f"Starting experiment: {config['full_title']}")
 
     rows = config["rows"]
@@ -1073,7 +1070,7 @@ def setup_dqn_agent(
         validation_env=validation_env,
         experiment_output_folder=config["out_dir"],
         experiment_name=config["experiment"],
-        resume_training_path=None,
+        resume_training_path=resume_training_path,
         save_checkpoints=True,
         logger=logger,
         config=config,

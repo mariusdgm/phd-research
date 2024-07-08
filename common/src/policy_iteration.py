@@ -8,12 +8,33 @@ def policy_evaluation_v(states, policy, V, t_r_dict, gamma, theta):
         for state in states:
             state_v = V[state]
             action = policy[state]
-            next_state, reward, done = t_r_dict.get((state, action), (None, 0, True))
+            transitions = t_r_dict.get((state, action), [(None, 0, True)])
 
-            if next_state is None or done:  # Handling terminal states
-                V[state] = reward
+            if (
+                isinstance(transitions, list)
+                and len(transitions) > 0
+                and isinstance(transitions[0], tuple)
+            ):
+                if len(transitions[0]) == 4:
+                    value = 0
+                    for next_state, reward, done, prob in transitions:
+                        if next_state is None or done:
+                            value += prob * reward
+                        else:
+                            value += prob * (reward + gamma * V[next_state])
+                    V[state] = value
+                else:
+                    for next_state, reward, done in transitions:
+                        if next_state is None or done:
+                            V[state] = reward
+                        else:
+                            V[state] = reward + gamma * V[next_state]
             else:
-                V[state] = reward + gamma * V[next_state]
+                next_state, reward, done = transitions
+                if next_state is None or done:
+                    V[state] = reward
+                else:
+                    V[state] = reward + gamma * V[next_state]
 
             delta = max(delta, abs(state_v - V[state]))
 
@@ -267,11 +288,15 @@ def policy_evaluation_q_stochastic(states, actions, policy, Q, t_r_dict, gamma, 
 
                 for next_state, reward, done, prob in transitions:
                     if done:
-                        q_value_sum += prob * reward  # Directly use the reward if it's a terminal state
+                        q_value_sum += (
+                            prob * reward
+                        )  # Directly use the reward if it's a terminal state
                     else:
                         # Use the value of the next state under the current policy, if not terminal
-                        q_value_sum += prob * (reward + gamma * Q[next_state][policy[next_state]])
-                
+                        q_value_sum += prob * (
+                            reward + gamma * Q[next_state][policy[next_state]]
+                        )
+
                 Q[state][action] = q_value_sum
                 delta = max(delta, abs(old_q_value - Q[state][action]))
 
@@ -302,7 +327,9 @@ def find_optimal_policy_q_stochastic(t_r_dict, gamma=0.9, theta=1e-6):
     return policy, Q
 
 
-def random_policy_evaluation_q_stochastic(states, actions, policy, Q, t_r_dict, gamma, theta):
+def random_policy_evaluation_q_stochastic(
+    states, actions, policy, Q, t_r_dict, gamma, theta
+):
     while True:
         delta = 0
         for state in states:
@@ -316,7 +343,8 @@ def random_policy_evaluation_q_stochastic(states, actions, policy, Q, t_r_dict, 
                     else:
                         # For stochastic policy, sum over all actions weighted by their probabilities
                         weighted_sum = sum(
-                            policy[state].get(a, 0) * Q[next_state].get(a, 0) for a in actions
+                            policy[state].get(a, 0) * Q[next_state].get(a, 0)
+                            for a in actions
                         )
                         q_value_sum += prob * (reward + gamma * weighted_sum)
                 Q[state][action] = q_value_sum

@@ -3,6 +3,7 @@ from enum import IntEnum
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
+
 class Action(IntEnum):
     UP = 0
     RIGHT = 1
@@ -134,9 +135,15 @@ def draw_labyrinth_gridworld(
 
 
 def draw_simple_gridworld(
-    grid_shape, walls, V, terminal_states, policy=None, enable_heatmap=True
+    grid_shape,
+    walls,
+    V,
+    terminal_states,
+    policy=None,
+    enable_heatmap=True,
+    figsize=(7, 7),
 ):
-    fig, ax = plt.subplots(figsize=(7, 7))
+    fig, ax = plt.subplots(figsize=figsize)
 
     if enable_heatmap:
         values = list(V.values())
@@ -189,5 +196,3 @@ def draw_simple_gridworld(
     ax.set_xticks([])
     ax.set_yticks([])
     plt.show()
-
-
