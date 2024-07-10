@@ -1001,13 +1001,14 @@ class AgentDQN:
             "env_settings": env_settings,
             "replay_buffer_settings": replay_buffer_settings,
         }
-        
-    def compute_q_table(self, states, actions):
+
+    def compute_q_table(self, states, actions, standardize_state=None):
         """
         Compute the Q-table for the given states and actions using the policy model.
         Args:
             states (list): List of all possible states.
             actions (list): List of all possible actions.
+            standardize_state (function, optional): Function to standardize states.
         Returns:
             dict: A Q-table in the form of a dictionary {state: {action: Q-value}}.
         """
@@ -1015,7 +1016,12 @@ class AgentDQN:
         q_table = {state: {action: 0 for action in actions} for state in states}
 
         for state in states:
-            state_tensor = torch.tensor(state, device=device).float().unsqueeze(0)
+            if standardize_state is not None:
+                normalized_state = standardize_state(state)
+            else:
+                normalized_state = state
+
+            state_tensor = torch.tensor(normalized_state, device=device).float().unsqueeze(0)
             with torch.no_grad():
                 q_values = self.policy_model(state_tensor).cpu().numpy().flatten()
             for idx, action in enumerate(actions):

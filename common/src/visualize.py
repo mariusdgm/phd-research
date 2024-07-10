@@ -1,5 +1,4 @@
 from enum import IntEnum
-
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
@@ -41,97 +40,13 @@ def draw_arrow_in_cell(grid_shape, state, action, ax):
     )
 
 
-def draw_terminal_state(grid_shape, terminal_state, ax):
-    radius = 0.4
-    circle = plt.Circle(
-        (terminal_state[1] + 0.5, grid_shape[0] - terminal_state[0] - 0.5),
-        radius,
-        color="red",
-        fill=False,
-    )
-    ax.add_patch(circle)
-    ax.plot(
-        [
-            terminal_state[1] + 0.5 - radius * 0.7,
-            terminal_state[1] + 0.5 + radius * 0.7,
-        ],
-        [
-            grid_shape[0] - terminal_state[0] - 0.5 - radius * 0.7,
-            grid_shape[0] - terminal_state[0] - 0.5 + radius * 0.7,
-        ],
-        color="red",
-    )
-    ax.plot(
-        [
-            terminal_state[1] + 0.5 - radius * 0.7,
-            terminal_state[1] + 0.5 + radius * 0.7,
-        ],
-        [
-            grid_shape[0] - terminal_state[0] - 0.5 + radius * 0.7,
-            grid_shape[0] - terminal_state[0] - 0.5 - radius * 0.7,
-        ],
-        color="red",
-    )
-
-
-def draw_labyrinth_gridworld(
-    grid_shape, walls, V, terminal_state, policy=None, enable_heatmap=True
-):
-    fig, ax = plt.subplots(figsize=(7, 7))
-
-    if enable_heatmap:
-        values = list(V.values())
-        norm = mcolors.Normalize(vmin=min(values), vmax=max(values), clip=True)
-        cmap = plt.get_cmap("viridis")
-
-    for i in range(grid_shape[0] + 1):
-        ax.axhline(i, color="black", lw=1)
-        ax.axvline(i, color="black", lw=1)
-
-    for state in V.keys():
-        if state not in walls:
-            color = "white"
-            if enable_heatmap:
-                color = cmap(norm(V[state]))
-                ax.add_patch(
-                    plt.Rectangle(
-                        (state[1], grid_shape[0] - state[0] - 1), 1, 1, color=color
-                    )
-                )
-
-            if policy:  # Draw policy arrows
-                action = policy[state]
-                draw_arrow_in_cell(grid_shape, state, action, ax)
-
-            else:
-                # Add text
-                ax.text(
-                    state[1] + 0.5,
-                    grid_shape[0] - state[0] - 0.5,
-                    f"{V[state]:.2f}",
-                    ha="center",
-                    va="center",
-                    color="white" if color[:3] < (0.5, 0.5, 0.5) else "black",
-                )
-
-    # Draw terminal state marking
-    if terminal_state:
-        draw_terminal_state(grid_shape, terminal_state, ax)
-
-    # Draw walls
-    for wall in walls:
-        ax.add_patch(
-            plt.Rectangle(
-                (wall[1], grid_shape[0] - wall[0] - 1), 1, 1, fill=True, color="black"
-            )
+def draw_terminal_state_with_border(grid_shape, terminal_state, ax):
+    row, col = terminal_state
+    ax.add_patch(
+        plt.Rectangle(
+            (col, grid_shape[0] - row - 1), 1, 1, fill=None, edgecolor="red", lw=3
         )
-
-    ax.set_xlim(0, grid_shape[1])
-    ax.set_ylim(0, grid_shape[0])
-    ax.set_xticks([])
-    ax.set_yticks([])
-    plt.gca().invert_yaxis()
-    plt.show()
+    )
 
 
 def draw_simple_gridworld(
@@ -188,11 +103,73 @@ def draw_simple_gridworld(
                 )
 
     # Draw terminal state markings
-    for terminal_state, _ in terminal_states.items():
-        draw_terminal_state(grid_shape, terminal_state, ax)
+    for terminal_state, reward in terminal_states.items():
+        draw_terminal_state_with_border(grid_shape, terminal_state, ax)
+        row, col = terminal_state
 
     ax.set_xlim(0, grid_shape[1])
     ax.set_ylim(0, grid_shape[0])
     ax.set_xticks([])
     ax.set_yticks([])
+    plt.show()
+
+
+def draw_labyrinth_gridworld(
+    grid_shape, walls, V, terminal_states, policy=None, enable_heatmap=True
+):
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    if enable_heatmap:
+        values = list(V.values())
+        norm = mcolors.Normalize(vmin=min(values), vmax=max(values), clip=True)
+        cmap = plt.get_cmap("viridis")
+
+    for i in range(grid_shape[0] + 1):
+        ax.axhline(i, color="black", lw=1)
+        ax.axvline(i, color="black", lw=1)
+
+    for state in V.keys():
+        if state not in walls:
+            color = "white"
+            if enable_heatmap:
+                color = cmap(norm(V[state]))
+                ax.add_patch(
+                    plt.Rectangle(
+                        (state[1], grid_shape[0] - state[0] - 1), 1, 1, color=color
+                    )
+                )
+
+            if policy:  # Draw policy arrows
+                action = policy[state]
+                draw_arrow_in_cell(grid_shape, state, action, ax)
+
+            else:
+                # Add text
+                ax.text(
+                    state[1] + 0.5,
+                    grid_shape[0] - state[0] - 0.5,
+                    f"{V[state]:.2f}",
+                    ha="center",
+                    va="center",
+                    color="white" if color[:3] < (0.5, 0.5, 0.5) else "black",
+                )
+
+    # Draw terminal state marking
+    if terminal_states:
+        for terminal_state in terminal_states:
+            draw_terminal_state_with_border(grid_shape, terminal_state, ax)
+
+    # Draw walls
+    for wall in walls:
+        ax.add_patch(
+            plt.Rectangle(
+                (wall[1], grid_shape[0] - wall[0] - 1), 1, 1, fill=True, color="black"
+            )
+        )
+
+    ax.set_xlim(0, grid_shape[1])
+    ax.set_ylim(0, grid_shape[0])
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.gca().invert_yaxis()
     plt.show()

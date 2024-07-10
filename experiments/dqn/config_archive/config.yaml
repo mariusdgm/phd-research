@@ -1,0 +1,12 @@
+agent_params:
+  args_:
+    hidden_size: [16, 32, 64, 128]
+
+replay_buffer:
+  # type: ["ReplayBuffer", "UniqueReplayBuffer"]
+  type: ["UniqueReplayBuffer"]
+
+optim:
+  args_:
+    lr: [0.0001, 0.0005, 0.001]
+    eps: [0.0001, 0.0005, 0.00001, 0.000001]
