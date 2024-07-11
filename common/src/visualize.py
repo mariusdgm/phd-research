@@ -67,6 +67,7 @@ def draw_simple_gridworld(
 
     for i in range(grid_shape[0] + 1):
         ax.axhline(i, color="black", lw=1)
+    for i in range(grid_shape[1] + 1):
         ax.axvline(i, color="black", lw=1)
 
     for row in range(grid_shape[0]):
@@ -99,7 +100,11 @@ def draw_simple_gridworld(
                     f"{V[state]:.2f}",
                     ha="center",
                     va="center",
-                    color="white" if color[:3] < (0.5, 0.5, 0.5) else "black",
+                    color=(
+                        "white"
+                        if mcolors.rgb_to_hsv(mcolors.to_rgb(color))[2] < 0.5
+                        else "black"
+                    ),
                 )
 
     # Draw terminal state markings
@@ -111,6 +116,93 @@ def draw_simple_gridworld(
     ax.set_ylim(0, grid_shape[0])
     ax.set_xticks([])
     ax.set_yticks([])
+    plt.gca().set_aspect("equal", adjustable="box")
+    plt.show()
+
+
+def draw_gridworld_with_state_counts(
+    grid_shape,
+    state_counts,
+    walls,
+    terminal_states,
+    figsize=(7, 7),
+    show_text=True,
+    show_colorbar=True,
+    title=None,
+):
+    fig, ax = plt.subplots(figsize=figsize)
+
+    values = list(state_counts.values())
+    norm = mcolors.Normalize(vmin=min(values), vmax=max(values), clip=True)
+    cmap = plt.get_cmap("viridis")
+
+    for i in range(grid_shape[0] + 1):
+        ax.axhline(i, color="black", lw=1)
+    for i in range(grid_shape[1] + 1):
+        ax.axvline(i, color="black", lw=1)
+
+    for row in range(grid_shape[0]):
+        for col in range(grid_shape[1]):
+            state = (row, col)
+
+            if state in walls:  # Draw walls
+                ax.add_patch(
+                    plt.Rectangle(
+                        (col, grid_shape[0] - row - 1), 1, 1, fill=True, color="black"
+                    )
+                )
+                continue
+
+            color = "white"
+            if state in state_counts:
+                color = cmap(norm(state_counts[state]))
+                ax.add_patch(
+                    plt.Rectangle((col, grid_shape[0] - row - 1), 1, 1, color=color)
+                )
+                # Add text for value if show_text is True
+                if show_text:
+                    ax.text(
+                        col + 0.5,
+                        grid_shape[0] - row - 0.5,
+                        f"{state_counts[state]}",
+                        ha="center",
+                        va="center",
+                        color=(
+                            "white"
+                            if mcolors.rgb_to_hsv(mcolors.to_rgb(color))[2] < 0.5
+                            else "black"
+                        ),
+                    )
+
+    # Draw terminal state markings
+    for terminal_state, reward in terminal_states.items():
+        row, col = terminal_state
+        ax.add_patch(
+            plt.Rectangle(
+                (col, grid_shape[0] - row - 1),
+                1,
+                1,
+                fill=False,
+                edgecolor="red",
+                linewidth=3,
+            )
+        )
+
+    if show_colorbar:
+        # Create colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])  # Only needed for matplotlib < 3.1
+        cbar = plt.colorbar(sm, ax=ax)
+        cbar.set_label("State Visit Counts")
+
+    if title:
+        plt.title(title)
+
+    ax.set_xlim(0, grid_shape[1])
+    ax.set_ylim(0, grid_shape[0])
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.gca().set_aspect("equal", adjustable="box")
     plt.show()
 
 

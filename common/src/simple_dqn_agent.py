@@ -101,6 +101,7 @@ class AgentDQN:
         self.logger = logger
         self.tensor_board_writer = None
         self.start_state_counts = {}
+        self.transition_counter = {}
 
         # set up path names
         self.experiment_output_folder = experiment_output_folder
@@ -364,6 +365,7 @@ class AgentDQN:
         save_training_status=True,
         save_buffer=True,
         save_start_state_counts=True,
+        save_transition_counter=True,
     ):
         self.logger.info(f"Saving checkpoint at t = {self.t} ...")
         if save_models:
@@ -380,6 +382,14 @@ class AgentDQN:
             )
             with open(start_state_counts_file, "wb") as f:
                 pickle.dump(self.start_state_counts, f)
+
+        if save_transition_counter:
+            transition_counter_file = os.path.join(
+                self.experiment_output_folder,
+                f"{self.experiment_name}_transition_counter.pkl",
+            )
+            with open(transition_counter_file, "wb") as f:
+                pickle.dump(self.transition_counter, f)
 
         self.logger.info(f"Checkpoint saved at t = {self.t}")
 
@@ -915,6 +925,18 @@ class AgentDQN:
         self.optimizer.zero_grad()
         states, actions, rewards, next_states, dones = sample
 
+        for s, a, r, s_prime, d in zip(states, actions, rewards, next_states, dones):
+            key = (
+                tuple(s.cpu().numpy()),
+                a,
+                r,
+                tuple(s_prime.cpu().numpy()),
+                d,
+            )
+            if key not in self.transition_counter:
+                self.transition_counter[key] = 0
+            self.transition_counter[key] += 1
+
         states = torch.stack(states, dim=0)
         next_states = torch.stack(next_states, dim=0)
 
@@ -1021,7 +1043,9 @@ class AgentDQN:
             else:
                 normalized_state = state
 
-            state_tensor = torch.tensor(normalized_state, device=device).float().unsqueeze(0)
+            state_tensor = (
+                torch.tensor(normalized_state, device=device).float().unsqueeze(0)
+            )
             with torch.no_grad():
                 q_values = self.policy_model(state_tensor).cpu().numpy().flatten()
             for idx, action in enumerate(actions):
