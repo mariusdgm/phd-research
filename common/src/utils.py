@@ -1,3 +1,5 @@
+import yaml
+
 def create_random_policy(states, actions):
     num_actions = len(actions)
     action_prob = 1.0 / num_actions  # Uniform probability for each action
@@ -36,3 +38,4 @@ def derive_policy_from_q_table(q_table, states, actions):
         if state in q_table:  # Check if state exists in the Q-table
             policy[state] = max(actions, key=lambda a: q_table[state][a])
     return policy
+

@@ -57,6 +57,7 @@ def draw_simple_gridworld(
     policy=None,
     enable_heatmap=True,
     figsize=(7, 7),
+    title=None,
 ):
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -111,6 +112,9 @@ def draw_simple_gridworld(
     for terminal_state, reward in terminal_states.items():
         draw_terminal_state_with_border(grid_shape, terminal_state, ax)
         row, col = terminal_state
+
+    if title:
+        plt.title(title)
 
     ax.set_xlim(0, grid_shape[1])
     ax.set_ylim(0, grid_shape[0])
