@@ -42,9 +42,9 @@ import gymnasium as gym
 import logging
 
 
-class StandardizeWrapper(gym.Wrapper):
+class GridWorldStandardizeWrapper(gym.Wrapper):
     def __init__(self, env):
-        super(StandardizeWrapper, self).__init__(env)
+        super(GridWorldStandardizeWrapper, self).__init__(env)
         self.rows = env.rows
         self.cols = env.cols
 
@@ -101,11 +101,11 @@ def random_select_starting_pos(prob_A, space_A, space_B):
     return (x, y)
 
 
-class RandomStartStateWrapper(gym.Wrapper):
+class GridWorldRandomStartStateWrapper(gym.Wrapper):
     def __init__(
         self, env, prob=0.1, space_A=((0, 0), (9, 14)), space_B=((0, 16), (5, 20))
     ):
-        super(RandomStartStateWrapper, self).__init__(env)
+        super(GridWorldRandomStartStateWrapper, self).__init__(env)
         self.prob_A = prob
         self.space_A = space_A
         self.space_B = space_B
@@ -124,7 +124,7 @@ class RandomStartStateWrapper(gym.Wrapper):
         return self.env.render(mode=mode)
 
 
-def make_env(
+def make_gridworld_env(
     rows,
     cols,
     start_state,
@@ -158,11 +158,15 @@ def make_env(
         episode_length_limit=episode_length_limit,
     )
     if randomize_starting_position:
-        env = RandomStartStateWrapper(env, **random_stating_positions_parameters)
+        env = GridWorldRandomStartStateWrapper(
+            env, **random_stating_positions_parameters
+        )
     if standardize_wrapper:
-        env = StandardizeWrapper(env)
+        env = GridWorldStandardizeWrapper(env)
     return env
 
+def make_inverted_pendulum_env():
+    return gym.make('InvertedPendulum-v4')
 
 def randomize_walls_positions(
     rows, columns, starting_cell, terminal_cells, ratio, seed
@@ -532,7 +536,9 @@ def run_sampling_regret_experiment(
         logger = logging.getLogger(__name__)
 
     seed_everything(run_id)
-    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    env = make_gridworld_env(
+        rows, cols, start_state, p_success, terminal_states, run_id
+    )
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -646,7 +652,9 @@ def run_sampling_regret_experiment_with_policy_evaluation(
         logger = logging.getLogger(__name__)
 
     seed_everything(run_id)
-    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    env = make_gridworld_env(
+        rows, cols, start_state, p_success, terminal_states, run_id
+    )
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -720,7 +728,9 @@ def run_baseline_random_policy_experiment(
         logger = logging.getLogger(__name__)
 
     seed_everything(run_id)
-    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    env = make_gridworld_env(
+        rows, cols, start_state, p_success, terminal_states, run_id
+    )
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -817,7 +827,9 @@ def run_distribution_correction_experiment(
         raise ValueError("Algorithm must be default, adjusted_loss, or dataset_normed")
 
     seed_everything(run_id)
-    env = make_env(rows, cols, start_state, p_success, terminal_states, run_id)
+    env = make_gridworld_env(
+        rows, cols, start_state, p_success, terminal_states, run_id
+    )
 
     states = list(set([s for s, _ in env.mdp.keys()]))
     actions = list(set([a for _, a in env.mdp.keys()]))
@@ -1040,7 +1052,7 @@ def setup_dqn_agent(config, logger, resume_training_path=None):
         config["normalize_replay_buffer_freq"] = True
 
     ### Setup environments ###
-    train_env = make_env(
+    train_env = make_gridworld_env(
         rows,
         cols,
         start_state,
@@ -1051,7 +1063,7 @@ def setup_dqn_agent(config, logger, resume_training_path=None):
         episode_length_limit=episode_length_limit,
         randomize_starting_position=randomize_starting_position,
     )
-    validation_env = make_env(
+    validation_env = make_gridworld_env(
         rows,
         cols,
         start_state,
