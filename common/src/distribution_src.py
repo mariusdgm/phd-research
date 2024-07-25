@@ -165,8 +165,26 @@ def make_gridworld_env(
         env = GridWorldStandardizeWrapper(env)
     return env
 
-def make_inverted_pendulum_env():
-    return gym.make('InvertedPendulum-v4')
+
+class DiscretizedActionWrapper(gym.ActionWrapper):
+    def __init__(self, env, n_bins):
+        super(DiscretizedActionWrapper, self).__init__(env)
+        self.n_bins = n_bins
+        self.action_space = gym.spaces.Discrete(n_bins)
+        self._action_map = np.linspace(
+            env.action_space.low, env.action_space.high, n_bins
+        )
+
+    def action(self, action):
+        return self._action_map[action]
+
+
+def make_inverted_pendulum_env(discretize_actions=True):
+    env = gym.make("InvertedPendulum-v2")
+    if discretize_actions:
+        env = DiscretizedActionWrapper(env, n_bins=10)
+    return env
+
 
 def randomize_walls_positions(
     rows, columns, starting_cell, terminal_cells, ratio, seed
@@ -961,7 +979,7 @@ def generate_train_test_split_with_valid_path(
     return transitions_train, transitions_val
 
 
-def run_dqn_distribution_correction_experiment(
+def run_dqn_distribution_correction_experiment_mdp_env(
     config,
     logger=None,
 ):
@@ -1034,10 +1052,60 @@ def run_dqn_distribution_correction_experiment(
 
     return experiment_data
 
+def run_dqn_distribution_correction_experiment_mdp_env(
+    config,
+    logger=None,
+):
 
-def setup_dqn_agent(config, logger, resume_training_path=None):
-    logger.info(f"Starting experiment: {config['full_title']}")
+    if logger is None:
+        logger = logging.getLogger(__name__)
 
+    algorithm = config.get("algorithm")
+    if algorithm is None:
+        logger.error("Algorithm must be provided")
+        raise ValueError("Algorithm must be provided")
+
+    if algorithm not in ["default", "adjusted_loss", "dataset_normed"]:
+        logger.error("Algorithm must be default, adjusted_loss, or dataset_normed")
+        raise ValueError("Algorithm must be default, adjusted_loss, or dataset_normed")
+
+    seed = config.get("seed")
+    seed_everything(seed)
+
+    agent = setup_dqn_agent(
+        config=config,
+        logger=logger,
+    )
+
+    logger.info(f"Agent parametrization: {agent.get_settings()}")
+
+    experiment_data = []
+    for i in range(1, config["train_max_iterations"] + 1):
+        agent.train(i)
+
+        rb_entropy = agent.replay_buffer.calculate_buffer_entropy()
+
+        normalized_rb = agent.replay_buffer.normalize_replay_buffer()
+        normalized_rb_entropy = normalized_rb.calculate_buffer_entropy()
+
+        examples = [
+            (transition[0], transition[1]) for transition in agent.replay_buffer.buffer
+        ]
+        example_strings = [f"{state}_{action}" for state, action in examples]
+        unique_examples, counts = np.unique(example_strings, return_counts=True)
+
+        experiment_data.append(
+            {
+                "epoch": i,
+                "replay_buffer_entropy": rb_entropy,
+                "normalized_replay_buffer_entropy": normalized_rb_entropy,
+                "nr_unique_examples": len(unique_examples),
+            }
+        )
+
+    return experiment_data
+
+def setup_gridworld_envs(config, logger):
     rows = config["rows"]
     cols = config["cols"]
     start_state = config["start_state"]
@@ -1048,10 +1116,6 @@ def setup_dqn_agent(config, logger, resume_training_path=None):
     walls = set(config["walls"]) if config.get("walls") else None
     randomize_starting_position = config.get("randomize_starting_position")
 
-    if config["algorithm"] == "dataset_normed":
-        config["normalize_replay_buffer_freq"] = True
-
-    ### Setup environments ###
     train_env = make_gridworld_env(
         rows,
         cols,
@@ -1074,6 +1138,30 @@ def setup_dqn_agent(config, logger, resume_training_path=None):
         episode_length_limit=episode_length_limit,
         randomize_starting_position=randomize_starting_position,
     )
+
+    return train_env, validation_env
+
+
+def setup_inverted_pendulum_envs(config, logger):
+
+    train_env = make_inverted_pendulum_env()
+    validation_env = make_inverted_pendulum_env()
+
+    return train_env, validation_env
+
+
+def setup_dqn_agent(config, logger, resume_training_path=None):
+    logger.info(f"Starting experiment: {config['full_title']}")
+
+    if config["algorithm"] == "dataset_normed":
+        config["normalize_replay_buffer_freq"] = True
+
+    env_type = config.get("env", "gridworld")
+
+    if env_type == "gridworld":
+        train_env, validation_env = setup_gridworld_envs(config, logger)
+    elif env_type == "inverted_pendulum":
+        train_env, validation_env = setup_inverted_pendulum_envs(config, logger)
 
     ### Setup output and loading paths ###
 

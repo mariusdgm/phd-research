@@ -15,7 +15,9 @@ from argparse import Namespace
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 sys.path.append(root_dir)
 
-from common.src.distribution_src import run_dqn_distribution_correction_experiment
+from common.src.distribution_src import (
+    run_dqn_distribution_correction_experiment_mdp_env,
+)
 from common.src.experiment_utils import (
     setup_logger,
     cleanup_file_handlers,
@@ -51,11 +53,9 @@ def run(opts: Namespace) -> None:
         f"Starting experiment {opts.title}, seed {opts.run_id}, out_dir {opts.out_dir}"
     )
 
-    logger.info(
-        f"Config dict is {opts_dict}"
-    )
+    logger.info(f"Config dict is {opts_dict}")
 
-    experiment_data = run_dqn_distribution_correction_experiment(
+    experiment_data = run_dqn_distribution_correction_experiment_mdp_env(
         config=opts_dict,
         logger=logger,
     )
