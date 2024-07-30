@@ -14,6 +14,6 @@ liftoff experiment_inv_pendulum.py .\results\2024Jul24-132407_config_normal_rb -
 
 ## To install required env library:
 ```
-pip install rl-envs-forge==3.8.0
+pip install rl-envs-forge==4.0.1
 ```
 

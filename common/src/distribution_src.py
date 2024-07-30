@@ -17,6 +17,10 @@ sns.set_theme()
 from rl_envs_forge.envs.grid_world.grid_world import GridWorld
 from rl_envs_forge.envs.grid_world.grid_world import Action
 
+from rl_envs_forge.envs.inverted_pendulum.pendulum_disk.pendulum_disk import (
+    PendulumDisk,
+)
+
 from common.src.utils import create_random_policy
 from common.src.policy_iteration import random_policy_evaluation_q_stochastic
 from common.src.experiment_utils import seed_everything
@@ -179,8 +183,32 @@ class DiscretizedActionWrapper(gym.ActionWrapper):
         return self._action_map[action]
 
 
+class PendulumRandomStartStateWrapper(gym.Wrapper):
+    def __init__(
+        self,
+        env,
+        prob_vertical=0.9,
+        angle_range_vertical=(-0.3, 0.3),
+        angle_range_fallen=(np.pi - 0.3, np.pi + 0.3),
+    ):
+        super(PendulumRandomStartStateWrapper, self).__init__(env)
+        self.prob_vertical = prob_vertical
+        self.angle_range_vertical = angle_range_vertical
+        self.angle_range_fallen = angle_range_fallen
+
+    def reset(self, **kwargs):
+        if np.random.rand() < self.prob_vertical:
+            angle = np.random.uniform(*self.angle_range_vertical)
+        else:
+            angle = np.random.uniform(*self.angle_range_fallen)
+
+        initial_state = [angle, 0.0]
+        return self.env.reset(initial_state=initial_state)
+
+
 def make_inverted_pendulum_env(discretize_actions=True):
-    env = gym.make("InvertedPendulum-v2")
+    env = PendulumDisk(continuous_reward=True)
+    env = PendulumRandomStartStateWrapper(env)
     if discretize_actions:
         env = DiscretizedActionWrapper(env, n_bins=10)
     return env
@@ -1052,6 +1080,7 @@ def run_dqn_distribution_correction_experiment_mdp_env(
 
     return experiment_data
 
+
 def run_dqn_distribution_correction_experiment_mdp_env(
     config,
     logger=None,
@@ -1104,6 +1133,7 @@ def run_dqn_distribution_correction_experiment_mdp_env(
         )
 
     return experiment_data
+
 
 def setup_gridworld_envs(config, logger):
     rows = config["rows"]

@@ -14,7 +14,8 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 
-import gym
+import gymnasium as gym
+from gymnasium import spaces
 
 from .replay_buffer import ReplayBuffer, UniqueReplayBuffer
 from common.src.experiment_utils import seed_everything
@@ -300,15 +301,17 @@ class AgentDQN:
             ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
-        env = self.train_env
-        states = list(set([s for s, _ in env.mdp.keys()]))
-        actions = list(set([a for _, a in env.mdp.keys()]))
+        if hasattr(self.train_env, "mdp"):
+            states = list(set([s for s, _ in self.train_env.mdp.keys()]))
+            actions = list(set([a for _, a in self.train_env.mdp.keys()]))
 
-        ### Training
-        input_size = len(
-            states[0]
-        )  # Or another way to represent the size of your input
-        output_size = len(actions)
+            input_size = len(
+                states[0]
+            )  # Or another way to represent the size of your input
+            output_size = len(actions)
+        else:
+            input_size = self.in_features  # The size of the input layer
+            output_size = self.num_actions  # The size of the output layer
 
         self.policy_model = QNET(input_size, output_size, hidden_size=self.hidden_size)
         self.target_model = QNET(input_size, output_size, hidden_size=self.hidden_size)
@@ -321,8 +324,13 @@ class AgentDQN:
         self.logger.info("Initialized newtworks and optimizer.")
 
     def _get_observation_space_shape(self, observation_space):
-        """Extract a shape-like tuple from a tuple of discrete spaces."""
-        return tuple(space.n for space in observation_space.spaces)
+        """Extract a shape-like tuple from the observation space."""
+        if isinstance(observation_space, spaces.Box):
+            return observation_space.shape
+        elif isinstance(observation_space, spaces.Tuple):
+            return tuple(space.shape[0] for space in observation_space.spaces)
+        else:
+            raise ValueError("Unsupported observation space type")
 
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
@@ -332,10 +340,16 @@ class AgentDQN:
             self.train_env.observation_space
         )
 
-        # permute to get batch, channel, w, h shape
-        # specific to minatar
-        self.in_features = (1, state_shape[0], state_shape[1])
-        self.in_channels = self.in_features[0]
+        if isinstance(state_shape, tuple):
+            if len(state_shape) > 1:  # MinAtar or other image-like observations
+                # permute to get batch, channel, w, h shape
+                self.in_features = (1, state_shape[0], state_shape[1])
+                self.in_channels = self.in_features[0]
+            else:  # Simple vector observations
+                self.in_features = state_shape[0]
+        else:  # Handle any other case
+            self.in_features = state_shape
+
         self.num_actions = self.train_env.action_space.n
 
         self.train_s = self.train_env.reset()
