@@ -137,3 +137,58 @@ class UniqueReplayBuffer(ReplayBuffer):
             normed_buffer.append(*transition)
 
         return normed_buffer
+    
+class SparseReplayBuffer(ReplayBuffer):
+    def __init__(self, max_size, state_dim, n_step, threshold, normalization_ranges):
+        super().__init__(max_size, state_dim, n_step)
+        self.threshold = threshold  # Minimum combined normalized distance to consider a transition "different enough"
+        self.normalization_ranges = normalization_ranges  # Dictionary of normalization ranges for each transition component
+
+    def append(self, state, action, reward, next_state, done):
+        transition = (state, action, reward, next_state, done)
+
+        if self.is_different_enough(transition):
+            if len(self.buffer) >= self.max_size:
+                self.buffer.popleft()  # Remove the oldest transition to make space
+            self.buffer.append(transition)
+            self.total_appends += 1
+
+    def is_different_enough(self, new_transition):
+        for existing_transition in self.buffer:
+            distance = self.compute_normalized_distance(existing_transition, new_transition)
+            if distance < self.threshold:
+                return False
+        return True
+
+    def compute_normalized_distance(self, transition1, transition2):
+        # Normalize and compute the distance for each component
+        state_distance = np.linalg.norm(np.array(transition1[0]) - np.array(transition2[0])) / self.normalization_ranges["state"]
+        next_state_distance = np.linalg.norm(np.array(transition1[3]) - np.array(transition2[3])) / self.normalization_ranges["state"]
+        action_distance = np.linalg.norm(np.array(transition1[1]) - np.array(transition2[1])) / self.normalization_ranges["action"]
+        reward_distance = abs(transition1[2] - transition2[2]) / self.normalization_ranges["reward"]
+        done_distance = abs(transition1[4] - transition2[4]) / self.normalization_ranges["done"]
+
+        # Sum the normalized distances to get a total "difference" score
+        total_distance = state_distance + next_state_distance + action_distance + reward_distance + done_distance
+        return total_distance
+
+    def load(self, file_name):
+        with open(file_name, "rb") as f:
+            self.buffer, self.total_appends = pickle.load(f)
+
+    def save(self, file_name):
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
+        with open(file_name, "wb") as f:
+            pickle.dump((self.buffer, self.total_appends), f)
+
+    def normalize_replay_buffer(self):
+        transitions = list(self.buffer)
+        normalized_transitions = normalize_frequencies(transitions)
+
+        normed_buffer = SparseReplayBuffer(
+            self.max_size, self.state_dim, self.n_step, self.threshold, self.normalization_ranges
+        )
+        for transition in normalized_transitions:
+            normed_buffer.append(*transition)
+
+        return normed_buffer
