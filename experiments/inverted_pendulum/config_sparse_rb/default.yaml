@@ -37,6 +37,8 @@ optim:
     eps: 0.0003125
 
 replay_buffer:
-  type: "ReplayBuffer"
+  type: "SparseReplayBuffer"
   max_size: 10_000
   n_step: 0
+  sample_distance_threshold: 0.5
+  knn_neighbors: 10

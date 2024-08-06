@@ -1,11 +1,13 @@
 import os
-from collections import deque
 import numpy as np
 import random
 import pickle
-from scipy.stats import entropy
-from .frequency_normalization import normalize_frequencies, transform_to_hashable_type
 
+from collections import deque
+from scipy.stats import entropy
+from sklearn.neighbors import KDTree
+
+from .frequency_normalization import normalize_frequencies, transform_to_hashable_type
 
 class ReplayBuffer:
     def __init__(self, max_size, state_dim, n_step):
@@ -139,56 +141,61 @@ class UniqueReplayBuffer(ReplayBuffer):
         return normed_buffer
     
 class SparseReplayBuffer(ReplayBuffer):
-    def __init__(self, max_size, state_dim, n_step, threshold, normalization_ranges):
+    def __init__(self, max_size, state_dim, n_step, threshold, normalization_ranges, knn_neighbors=10):
         super().__init__(max_size, state_dim, n_step)
-        self.threshold = threshold  # Minimum combined normalized distance to consider a transition "different enough"
-        self.normalization_ranges = normalization_ranges  # Dictionary of normalization ranges for each transition component
+        self.threshold = threshold
+        self.normalization_ranges = normalization_ranges
+        self.knn_neighbors = knn_neighbors
+        self.kd_tree = None  # KDTree will be initialized when we have enough transitions
+        self.transition_data = []  # List to store flattened transitions for KDTree
+
+    def _normalize_transition(self, transition):
+        state, action, reward, next_state, done = transition
+
+        # Normalize each component according to the provided ranges
+        norm_state = np.array(state) / self.normalization_ranges["state"]
+        norm_action = np.array([action]) / self.normalization_ranges["action"]
+        norm_reward = np.array([reward]) / self.normalization_ranges["reward"]
+        norm_next_state = np.array(next_state) / self.normalization_ranges["state"]
+        norm_done = np.array([done]) / self.normalization_ranges["done"]
+
+        # Flatten and concatenate
+        flat_transition = np.concatenate([norm_state.flatten(), norm_action.flatten(), norm_reward.flatten(), norm_next_state.flatten(), norm_done.flatten()])
+        
+        return flat_transition
+
+    def _update_kd_tree(self):
+        if len(self.transition_data) >= self.knn_neighbors:
+            self.kd_tree = KDTree(np.array(self.transition_data))
 
     def append(self, state, action, reward, next_state, done):
         transition = (state, action, reward, next_state, done)
+        flat_transition = self._normalize_transition(transition)
 
-        if self.is_different_enough(transition):
-            if len(self.buffer) >= self.max_size:
-                self.buffer.popleft()  # Remove the oldest transition to make space
-            self.buffer.append(transition)
-            self.total_appends += 1
+        if len(self.transition_data) >= self.knn_neighbors:
+            dist, _ = self.kd_tree.query([flat_transition], k=self.knn_neighbors)
+            if np.mean(dist) < self.threshold:
+                return  # Skip adding as it's too similar
 
-    def is_different_enough(self, new_transition):
-        for existing_transition in self.buffer:
-            distance = self.compute_normalized_distance(existing_transition, new_transition)
-            if distance < self.threshold:
-                return False
-        return True
+        # Add the new transition
+        if len(self.buffer) >= self.max_size:
+            self.buffer.popleft()  # Remove the oldest transition to make space
+            self.transition_data.pop(0)  # Maintain transition data size
 
-    def compute_normalized_distance(self, transition1, transition2):
-        # Normalize and compute the distance for each component
-        state_distance = np.linalg.norm(np.array(transition1[0]) - np.array(transition2[0])) / self.normalization_ranges["state"]
-        next_state_distance = np.linalg.norm(np.array(transition1[3]) - np.array(transition2[3])) / self.normalization_ranges["state"]
-        action_distance = np.linalg.norm(np.array(transition1[1]) - np.array(transition2[1])) / self.normalization_ranges["action"]
-        reward_distance = abs(transition1[2] - transition2[2]) / self.normalization_ranges["reward"]
-        done_distance = abs(transition1[4] - transition2[4]) / self.normalization_ranges["done"]
+        self.buffer.append(transition)
+        self.transition_data.append(flat_transition)
+        self.total_appends += 1
 
-        # Sum the normalized distances to get a total "difference" score
-        total_distance = state_distance + next_state_distance + action_distance + reward_distance + done_distance
-        return total_distance
+        # Update KDTree
+        self._update_kd_tree()
 
     def load(self, file_name):
         with open(file_name, "rb") as f:
             self.buffer, self.total_appends = pickle.load(f)
+        self.transition_data = [self._normalize_transition(transition) for transition in self.buffer]
+        self._update_kd_tree()
 
     def save(self, file_name):
         os.makedirs(os.path.dirname(file_name), exist_ok=True)
         with open(file_name, "wb") as f:
             pickle.dump((self.buffer, self.total_appends), f)
-
-    def normalize_replay_buffer(self):
-        transitions = list(self.buffer)
-        normalized_transitions = normalize_frequencies(transitions)
-
-        normed_buffer = SparseReplayBuffer(
-            self.max_size, self.state_dim, self.n_step, self.threshold, self.normalization_ranges
-        )
-        for transition in normalized_transitions:
-            normed_buffer.append(*transition)
-
-        return normed_buffer

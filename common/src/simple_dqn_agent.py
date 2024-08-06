@@ -17,7 +17,7 @@ import torch.nn as nn
 import gymnasium as gym
 from gymnasium import spaces
 
-from .replay_buffer import ReplayBuffer, UniqueReplayBuffer
+from .replay_buffer import ReplayBuffer, UniqueReplayBuffer, SparseReplayBuffer
 from common.src.experiment_utils import seed_everything
 
 from common.src.models import QNET
@@ -259,6 +259,23 @@ class AgentDQN:
                 state_dim=self.in_features,
                 n_step=buffer_settings.get("n_step"),
             )
+        elif buffer_type == "SparseReplayBuffer":
+            # Custom range for the pendulum env
+            normalization_ranges = {
+                "state": 2 * np.pi,         # Normalization range for both state and next_state components (e.g., angle range [-π, π])
+                "action": 6.0,              # Normalization range for action component (e.g., action range [-3, 3])
+                "reward": 1.0,              # Normalization range for reward component
+                "done": 1.0                 # Normalization for done component, although it's binary
+            }
+            self.replay_buffer = SparseReplayBuffer(
+                max_size=buffer_settings.get("max_size"),
+                state_dim=self.in_features,
+                n_step=buffer_settings.get("n_step"),
+                threshold=buffer_settings.get("sample_distance_threshold"), 
+                normalization_ranges=normalization_ranges,
+                knn_neighbors=buffer_settings.get("knn_neighbors")
+            )
+            
         else:
             raise ValueError(
                 f"The following buffer type was provided: {buffer_type}, please choose between ReplayBuffer and UniqueReplayBuffer"
